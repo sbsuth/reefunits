@@ -1,0 +1,160 @@
+
+Start setup
+A
+XXXXXXXXXX: In RF24::begin()
+B
+C
+Done setup XXXXXXXXXXXXXXXXXXXXXXXXXXXX
+TOKEN: GET
+parser=0
+TOKEN: /
+parser=0
+TOKEN: HTTP/1.1
+parser=0
+TOKEN: User-Agent:
+parser=0
+TOKEN: Wget/1.16
+parser=0
+TOKEN: (linux-gnueabihf)
+parser=0
+TOKEN: Accept:
+parser=0
+TOKEN: */*
+parser=0
+TOKEN: Host:
+parser=0
+TOKEN: 10.10.2.4:1000
+parser=0
+TOKEN: Connection:
+parser=0
+TOKEN: Keep-Alive
+parser=0
+TOKEN: GET
+parser=0
+TOKEN: /
+parser=0
+TOKEN: HTTP/1.1
+parser=0
+TOKEN: User-Agent:
+parser=0
+TOKEN: Wget/1.16
+parser=0
+TOKEN: (linux-gnueabihf)
+parser=0
+TOKEN: Accept:
+parser=0
+TOKEN: */*
+parser=0
+TOKEN: Host:
+parser=0
+TOKEN: 10.10.2.4:1000
+parser=0
+TOKEN: Connection:
+parser=0
+TOKEN: Keep-Alive
+parser=0
+TOKEN: up
+Got cmd
+Change goingUp to 1
+Current on: 1
+TOKEN: stop
+Got cmd
+Change goingUp to 0
+Current on: 0
+Start setup
+A
+XXXXXXXXXX: In RF24::begin()
+B
+C
+Done setup XXXXXXXXXXXXXXXXXXXXXXXXXXXX
+TOKEN: up
+Change goingUp to 1
+Current on: 1
+TOKEN: stop
+Change goingUp to 0
+Current on: 0
+TOKEN: POST
+parser=0
+TOKEN: /
+parser=0
+TOKEN: HTTP/1.1
+parser=0
+TOKEN: host:
+parser=0
+TOKEN: 10.10.2.4:1000
+parser=0
+TOKEN: accept:
+parser=0
+TOKEN: application/json
+parser=0
+TOKEN: content-type:
+parser=0
+TOKEN: application/json
+parser=0
+TOKEN: content-length:
+parser=0
+TOKEN: 17
+parser=0
+TOKEN: Connection:
+parser=0
+TOKEN: keep-alive
+parser=0
+TOKEN: {"cmd":"up
+parser=0
+TOKEN: 1
+parser=0
+TOKEN: TOKEN:
+parser=0
+TOKEN: POST
+parser=0
+TOKEN: parser=0
+parser=0
+TOKEN: TOKEN:
+parser=0
+TOKEN: /
+parser=0
+TOKEN: parser=0
+parser=0
+TOKEN: TOKEN:
+parser=0
+TOKEN: HTTP/1.1
+parser=0
+TOKEN: parser=0
+parser=0
+TOKEN: TOKEN:
+parser=0
+TOKEN: host:
+parser=0
+TOKEN: parser=0
+parser=0
+TOKEN: TOKEN:
+parser=0
+TOKEN: 10.10.2.4:1000
+parser=0
+TOKEN: parser=0
+parser=0
+TOKEN: T:
+parser=0
+TOKEN: parser=on/jsoncontenOKEN:
+parser=0
+TOKEN: apprser=0
+parser=0
+TOKEN: gth:
+parser=0
+TOKEN: parser=0
+parser=0
+TOKEN: T0
+parser=0
+TOKEN: TOKEN:
+parser=0
+TOKEN: er=e
+parser=0
+TOKEN: parser=0
+parser=0
+TOKEN: TOKEN:
+parser=0
+TOKEN: {"cmd":":
+parser=0
+TOKEN: 1
+parser=0
+
