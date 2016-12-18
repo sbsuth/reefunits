@@ -28,3 +28,4 @@ examples_linux/*
 *.elf
 *.hex
 *.s#*
+~$*
