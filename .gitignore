@@ -27,3 +27,4 @@ examples_linux/*
 *.eep
 *.elf
 *.hex
+*.s#*

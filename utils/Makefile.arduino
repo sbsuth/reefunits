@@ -86,6 +86,7 @@
 #       all built product files(.hex, .elf, .eep).
 #
 # $Id$
+#
 
 # built-in libraries
 # EEPROM Ethernet Firmata LiquidCrystal SD Servo SoftwareSerial SPI Stepper Wire
@@ -100,13 +101,13 @@ THIRDPARTYLIB_ENABLED +=  RF24  RF24Network RF24Mesh RF24Ethernet ArduinoJson
 
 endif
 
-MCU := atmega328p
 F_CPU := 16000000L
-ARDUINO_VERSION := 10607
 FORMAT := ihex
 UPLOAD_RATE := 115200
 #PORT := /dev/tty.usbserial*
+ifeq ($(PORT),)
 PORT := \\.\COM3
+endif
 
 HOME := c:/cygwin64/home/sbs
 #the topmost path to the arduino software
@@ -179,12 +180,23 @@ SRC = $(PROJSRC) $(CORESRC) $(BUILTINLIB_SRC) $(THIRDPARTYLIB_SRC)
 CXXSRC = $(PROJCXXSRC) $(UTILS_SOURCE) $(CORECXXSRC) $(BUILTINLIB_CXXSRC) $(THIRDPARTYLIB_CXXSRC)
 
 #
-MYDEFS := -DARDUINO_AVR_UNO -DARDUINO_ARCH_AVR
+ifeq ($(MCU),atmega2560) 
+MYDEFS := -DARDUINO_AVR_MEGA2560
+else
+MYDEFS := -DARDUINO_AVR_UNO
+endif
+MYDEFS += -DARDUINO_ARCH_AVR
 CDEFS := -DF_CPU=$(F_CPU) -DARDUINO=$(ARDUINO_VERSION) $(MYDEFS)
 CXXDEFS := -DF_CPU=$(F_CPU) -DARDUINO=$(ARDUINO_VERSION) $(MYDEFS)
 
 # Place -I options here
-COMMON_INCS =  -I. -I$(CORE) -I$(CORE)/../../variants/standard -I../utils
+COMMON_INCS =  -I. -I$(CORE) -I../utils
+ifeq ($(MCU),atmega2560) 
+COMMON_INCS +=  -I$(CORE)/../../variants/mega
+else
+COMMON_INCS +=  -I$(CORE)/../../variants/standard
+endif
+COMMON_INCS +=  -I../utils
 COMMON_INCS += $(foreach path, $(BUILTINLIB_DIRS), -I$(path))
 COMMON_INCS += $(foreach path, $(THIRDPARTYLIB_DIRS), -I$(path))
 
@@ -217,7 +229,11 @@ ALL_ASFLAGS = -mmcu=$(MCU) -x assembler-with-cpp $(ASFLAGS)
 
 # Programming support using avrdude. Settings and variables.
 #AVRDUDE_PROGRAMMER = stk500
+ifneq ($(MCU),atmega2560)
 AVRDUDE_PROGRAMMER := arduino
+else
+AVRDUDE_PROGRAMMER := wiring
+endif
 AVRDUDE_CONFIG := ${INSTALL_PATH}/hardware/tools/avr/etc/avrdude.conf
 AVRDUDE_PORT := $(PORT)
 AVRDUDE_WRITE_FLASH := -U flash:w:$(PROJECT).hex:i
@@ -294,21 +310,30 @@ extcoff: $(PROJECT).elf
 # Define all object files.
 PROJOBJ = $(PROJSRC:.c=.o) $(PROJCXXSRC:.cpp=.o) $(UTILS_SOURCE:.cpp=.o) $(PROJASRC:.S=.o)
 
-COREOBJ = $(CORESRC:.c=.o) $(CORECXXSRC:.cpp=.o) $(COREASRC:.S=.o)
+COREOBJ1 = $(CORESRC:.c=.o) $(CORECXXSRC:.cpp=.o) $(COREASRC:.S=.o)
+COREOBJ = $(join $(addsuffix $(MCU)/,$(dir $(COREOBJ1))),$(notdir $(COREOBJ1)))
 
-BUILTINLIB_OBJ = $(BUILTINLIB_SRC:.c=.o) $(BUILTINLIB_CXXSRC:.cpp=.o)
+BUILTINLIB_OBJ1 = $(BUILTINLIB_SRC:.c=.o) $(BUILTINLIB_CXXSRC:.cpp=.o)
+BUILTINLIB_OBJ = $(join $(addsuffix $(MCU)/,$(dir $(BUILTINLIB_OBJ1))),$(notdir $(BUILTINLIB_OBJ1)))
 
-THIRDPARTYLIB_OBJ = $(THIRDPARTYLIB_SRC:.c=.o) $(THIRDPARTYLIB_CXXSRC:.cpp=.o)
+THIRDPARTYLIB_OBJ1 = $(THIRDPARTYLIB_SRC:.c=.o) $(THIRDPARTYLIB_CXXSRC:.cpp=.o)
+THIRDPARTYLIB_OBJ = $(join $(addsuffix $(MCU)/,$(dir $(THIRDPARTYLIB_OBJ1))),$(notdir $(THIRDPARTYLIB_OBJ1)))
 
-CORE_A = $(CORE)/core.a
+STUFF=a/b.c a/d.c
+
+echox:
+	@echo $(BUILD_DIRS)
+
+CORE_A = $(CORE)/$(MCU)/core.a
 $(CORE_A): $(COREOBJ)
 	$(AR) rcs $(CORE_A) $(COREOBJ)
 
-BUILTINLIB_A = $(BUILTINLIB)/builtinlib.a
+BUILTINLIB_A = $(BUILTINLIB)/$(MCU)/builtinlib.a
 $(BUILTINLIB_A): $(BUILTINLIB_OBJ)
+	mkdir -p $(BUILTINLIB)/$(MCU)
 	$(AR) rcs $(BUILTINLIB_A) $(BUILTINLIB_OBJ)
 
-THIRDPARTYLIB_A = $(THIRDPARTYLIB)/thirdparty.a
+THIRDPARTYLIB_A = $(THIRDPARTYLIB)/$(MCU)/thirdparty.a
 #THIRDPARTYLIB_A = 
 $(THIRDPARTYLIB_A): $(THIRDPARTYLIB_OBJ)
 	$(AR) rcs $(THIRDPARTYLIB_A) $(THIRDPARTYLIB_OBJ)
@@ -318,20 +343,39 @@ $(PROJECT).elf: $(PROJOBJ) $(CORE_A) $(BUILTINLIB_A) $(THIRDPARTYLIB_A)
 #$(PROJECT).elf: $(PROJOBJ) $(CORE_A) $(BUILTINLIB_A) 
 	$(CC) $(ALL_CFLAGS)  -Wl,--gc-sections $(PROJOBJ) $(CORE_A) $(BUILTINLIB_A) $(THIRDPARTYLIB_A) $(BUILTINLIB_A) $(CORE_A) -lm --output $@ $(LDFLAGS)
 
+define compile_cpp =
+$(1)$$(MCU)/%.o: $(1)%.cpp
+	mkdir -p $(1)/$$(MCU)
+	$$(CXX) -c $$(ALL_CXXFLAGS) $$< -o $$@ 
+endef
+
+define compile_c =
+$(1)$$(MCU)/%.o: $(1)%.c
+	mkdir -p $(1)/$$(MCU)
+	$$(CC) -c $$(ALL_CFLAGS) $$< -o $$@ 
+endef
+
+BUILD_DIRS := $(sort $(dir $(BUILTINLIB_OBJ1) $(THIRDPARTYLIB_OBJ1) $(COREOBJ1) ) )
+
+$(foreach bdir,$(BUILD_DIRS),$(eval $(call compile_cpp,$(bdir))))
+
+$(foreach bdir,$(BUILD_DIRS),$(eval $(call compile_c,$(bdir))))
+
+
 # Compile: create object files from C++ source files.
-.cpp.o:
+%.o : %.cpp
 	$(CXX) -c $(ALL_CXXFLAGS) $< -o $@ 
 
 # Compile: create object files from C source files.
-.c.o:
+%.o : %.c
 	$(CC) -c $(ALL_CFLAGS) $< -o $@ 
 
 # Compile: create assembler files from C source files.
-.c.s:
+%.s : %.c
 	$(CC) -S $(ALL_CFLAGS) $< -o $@
 
 # Assemble: create object files from assembler source files.
-.S.o:
+%.o : %.S
 	$(CC) -c $(ALL_ASFLAGS) $< -o $@
 
 

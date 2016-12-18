@@ -17,13 +17,32 @@
 #include "Command.h"
 
 
-#define UP_LED_OUT   	 5 
-#define UP_BUTTON_IN 	 9
-#define DOWN_LED_OUT 	 4 
-#define DOWN_BUTTON_IN 2
-#define SPEED_PWM      6
-#define CURRENT_LED_OUT 3
-#define CURRENT_IN    A0
+//#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__)
+// Uno
+//#define UP_LED_OUT   	 5 
+//#define UP_BUTTON_IN 	 9
+//#define DOWN_LED_OUT 	 4 
+//#define DOWN_BUTTON_IN   2
+//#define SPEED_PWM        6
+//#define CURRENT_LED_OUT  3
+//#define RF24_CE          7
+//#define RF24_CSN         8
+//#elif defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+// Mega
+#define UP_LED_OUT   	 27 
+#define UP_BUTTON_IN 	 35
+#define DOWN_LED_OUT 	 31 
+#define DOWN_BUTTON_IN   33
+#define SPEED_PWM        9
+#define CURRENT_LED_OUT  29
+#define BRIGHT_BUTTON_IN 49
+#define DIM_BUTTON_IN    47
+#define RF24_CE          25
+#define RF24_CSN         23
+//#else
+//#error "Not an expected Arduino!"
+//#endif
+#define CURRENT_IN      A0
 
 // Debug prints.
 #define DEBUG_CHANGES 1
@@ -42,7 +61,7 @@ static Switch downButton( DOWN_BUTTON_IN );
 
 
 // Network objects
-RF24 rf24Radio(7, 8);
+RF24 rf24Radio( RF24_CE, RF24_CSN);
 RF24Network rf24Network(rf24Radio);
 RF24Mesh rf24Mesh(rf24Radio,rf24Network);
 RF24EthernetClass RF24Ethernet(rf24Radio,rf24Network,rf24Mesh);
@@ -60,16 +79,24 @@ void setup() {
   pinMode( SPEED_PWM, OUTPUT);
   pinMode( CURRENT_LED_OUT, OUTPUT);
 
+Serial.println("A");
   // Do these after network.being() to avoid mysterious interference....
   upButton.setup();
+Serial.println("B");
   downButton.setup();
+Serial.println("C");
   
   // Ethernet startup.
   Ethernet.begin(myIP);
+Serial.println("D");
   rf24Mesh.begin(MESH_DEFAULT_CHANNEL, RF24_1MBPS, 5000);
+Serial.println("E");
   IPAddress gwIP(10, 10, 2, 2);
+Serial.println("F");
   Ethernet.set_gateway(gwIP);
+Serial.println("G");
   rf24EthernetServer.begin();
+Serial.println("H");
   
   Serial.println(F("Ready"));
 }
@@ -264,11 +291,9 @@ static void renewMesh()
 
 // the loop function runs over and over again forever
 void loop() {
-  // This is causing a hang I don't understand...  Happens at radio.checkConnection().
   renewMesh();
   upButton.update();
   downButton.update();
-
   if (upButton.changed() && upButton.isOn()) {
     changeUp( !goingUp );
   }
