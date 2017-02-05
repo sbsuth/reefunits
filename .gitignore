@@ -14,6 +14,7 @@ out/
 out_native/
 version.h
 Session.vim
+*.d
 *.so
 *.so.*
 *.dylib
