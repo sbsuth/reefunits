@@ -398,26 +398,18 @@ mostlyclean:
 	@$(REMOVE) $(PROJOBJ) 
 
 depend:
-	if grep '^# DO NOT DELETE' $(MAKEFILE) >/dev/null; \
-	then \
-		sed -e '/^# DO NOT DELETE/,$$d' $(MAKEFILE) > \
-			$(MAKEFILE).$$$$ && \
-		$(MV) $(MAKEFILE).$$$$ $(MAKEFILE); \
-	fi
-	echo '# DO NOT DELETE THIS LINE -- make depend depends on it.' >> $(MAKEFILE)
-	#$(CC) -M -mmcu=$(MCU) $(CDEFS) $(CINCS) $(SRC) $(ASRC) >> $(MAKEFILE)
-	#$(CXX) -M -mmcu=$(MCU) $(CXXDEFS) $(CXXINCS) $(CXXSRC) $(ASRC) >> $(MAKEFILE)
+	rm -f $(MAKEFILE).d
 	for F in $(SRC); do \
 	D=`dirname $$F | sed "s/^\.\///"`; \
-	echo -n "$$D/" >> $(MAKEFILE); \
+	echo -n "$$D/" >> $(MAKEFILE).d; \
 	$(CC) -M -mmcu=$(MCU) $(CDEFS) $(CINCS) $(ASRC) $$F \
-	>> $(MAKEFILE); \
+	>> $(MAKEFILE).d; \
 	done
 	for F in $(CXXSRC); do \
 	D=`dirname $$F | sed "s/^\.\///"`; \
-	echo -n "$$D/" >> $(MAKEFILE); \
+	echo -n "$$D/" >> $(MAKEFILE).d; \
 	$(CXX) -M -mmcu=$(MCU) $(CXXDEFS) $(CXXINCS) $(ASRC) $$F \
-	>> $(MAKEFILE); \
+	>> $(MAKEFILE).d; \
 	done
 
 x:
