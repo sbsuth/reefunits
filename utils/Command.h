@@ -3,9 +3,15 @@
 
 #include "common.h"
 
-#define DEF_CMD_TYPES 1
+#define DEF_CMD_MACROS 1
 #include "cmds.h"
-#undef DEF_CMD_TYPES
+#undef DEF_CMD_MACROS
+
+#define X(a,b,c,d) a,
+enum CommandKind {
+    #include "cmds.h"
+};
+#undef X
 
 enum CommandArgKind {
     CmdArgNone,
@@ -194,8 +200,19 @@ struct CommandDescr
     uint8_t m_args[MAX_ARGS];
 };
 
-#define DEF_CMDS 1
+// Define PROGMEM string vars storing command name strings.
+// THese must be separate decls for each one if they're to be part of
+// a progmem array of structs that references them.
+#define X(a,b,c,d) const char string_##a[] PROGMEM = b;
 #include "cmds.h"
+#undef X
+
+// Define CommandDescr structs
+#define X(a,b,c,d) { a,      string_##a, c, d  },
+const CommandDescr PROGMEM g_commandDescrs[] = {
+    #include "cmds.h"
+};
+#undef X
 
 class InStream 
 {
