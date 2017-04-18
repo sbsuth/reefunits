@@ -4,7 +4,7 @@ USE_RF24 =1
 #ARDUINO_VERSION := 10607
 MCU := atmega328p
 ARDUINO_VERSION := 10607
-PORT := \\.\COM6
+PORT := \\.\COM4
 
 include ../utils/Makefile.arduino
 

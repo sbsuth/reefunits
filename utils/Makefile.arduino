@@ -308,7 +308,10 @@ extcoff: $(PROJECT).elf
 	$(NM) -n $< > $@
 
 # Define all object files.
-PROJOBJ = $(PROJSRC:.c=.o) $(PROJCXXSRC:.cpp=.o) $(UTILS_SOURCE:.cpp=.o) $(PROJASRC:.S=.o)
+UTILS_OBJ1 = $(UTILS_SOURCE:.cpp=.o)
+UTILS_OBJ = $(join $(addsuffix $(MCU)/,$(dir $(UTILS_OBJ1))),$(notdir $(UTILS_OBJ1)))
+
+PROJOBJ = $(PROJSRC:.c=.o) $(PROJCXXSRC:.cpp=.o) $(UTILS_OBJ) $(PROJASRC:.S=.o)
 
 COREOBJ1 = $(CORESRC:.c=.o) $(CORECXXSRC:.cpp=.o) $(COREASRC:.S=.o)
 COREOBJ = $(join $(addsuffix $(MCU)/,$(dir $(COREOBJ1))),$(notdir $(COREOBJ1)))
@@ -355,7 +358,7 @@ $(1)$$(MCU)/%.o: $(1)%.c
 	$$(CC) -c $$(ALL_CFLAGS) $$< -o $$@ 
 endef
 
-BUILD_DIRS := $(sort $(dir $(BUILTINLIB_OBJ1) $(THIRDPARTYLIB_OBJ1) $(COREOBJ1) ) )
+BUILD_DIRS := $(sort $(dir $(BUILTINLIB_OBJ1) $(THIRDPARTYLIB_OBJ1) $(COREOBJ1) $(UTILS_OBJ1) ) )
 
 $(foreach bdir,$(BUILD_DIRS),$(eval $(call compile_cpp,$(bdir))))
 

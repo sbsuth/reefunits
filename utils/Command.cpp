@@ -185,6 +185,7 @@ bool CommandParser::nextToken( bool& eol, bool& error )
     }
 
     processHTTPHeader(eol);
+
     return m_tokenOK;
 }
 
@@ -316,7 +317,7 @@ Command* CommandParser::getCommand( Command* cmd, bool& error )
             break;
     }
     if (!error) {
-        if (inHTTPHeader()) 
+        if (inHTTPHeader()==1) 
             m_state = ExpHTTP;
         
         if (m_state == ExpCmd)

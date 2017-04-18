@@ -46,8 +46,10 @@
 #define CURRENT_IN      A0
 
 // Debug prints.
-#define DEBUG_CHANGES 1
-#define DEBUG_CMD 1
+//#define DEBUG_STARTUP 1
+//#define DEBUG_CHANGES 1
+//#define DEBUG_CMD 1
+//#define DEBUG_CONNECT 1
 
 
 
@@ -102,8 +104,10 @@ void setupTimers()
 
 // the setup function runs once when you press reset or power the board
 void setup() {
+  #if DEBUG_STARTUP
   Serial.begin(115200);
   Serial.println(F("Start"));
+  #endif
 
   setupTimers();
   
@@ -125,7 +129,9 @@ void setup() {
   Ethernet.set_gateway(gwIP);
   rf24EthernetServer.begin();
   
+  #if DEBUG_STARTUP
   Serial.println(F("Ready"));
+  #endif
 }
 
 static long lastTimeUp = 0;
@@ -307,7 +313,9 @@ void processCommand()
                 break;
             }
             default:
+                #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
+                #endif
                 break;
         }
         if (needResp) {
@@ -315,7 +323,9 @@ void processCommand()
         }
         cmd->parser()->reset();
     } else if (error) {
+        #if DEBUG_CMD
         Serial.println(F("Error in command\n"));
+        #endif
     }
 }
 
@@ -329,8 +339,10 @@ static void renewMesh()
             //refresh the network address
             rf24Mesh.renewAddress();
 
+            #if DEBUG_CONNECT
             Serial.print(F("Connection renewal:"));
             Serial.println( rf24Mesh.checkConnection() );
+            #endif
         }  else {
             //Serial.print(F("Connection good."));
         }

@@ -12,52 +12,20 @@
 #include <RF24Ethernet.h>
 #include <ArduinoJson.h>
 
-#include "leds.h"
-
 #include "Command.h"
+#include "relays.h"
 
 
-//#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__)
-// Uno
-//#define UP_LED_OUT   	 5 
-//#define UP_BUTTON_IN 	 9
-//#define DOWN_LED_OUT 	 4 
-//#define DOWN_BUTTON_IN   2
-//#define SPEED_PWM        6
-//#define CURRENT_LED_OUT  3
-//#define RF24_CE          7
-//#define RF24_CSN         8
-//#elif defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
-// Mega
-#define UP_LED_OUT   	 27 
-#define UP_BUTTON_IN 	 35
-#define DOWN_LED_OUT 	 31 
-#define DOWN_BUTTON_IN   33
-#define SPEED_PWM        4
-#define CURRENT_LED_OUT  29
-#define BRIGHT_BUTTON_IN 49
-#define DIM_BUTTON_IN    47
-#define RF24_CE          25
-#define RF24_CSN         23
+#define RF24_CE          14
+#define RF24_CSN         15
 
-//#else
-//#error "Not an expected Arduino!"
-//#endif
-#define CURRENT_IN      A0
 
 // Debug prints.
-#define DEBUG_CHANGES 1
-#define DEBUG_CMD 1
+//#define DEBUG_STARTUP 1
+//#define DEBUG_CHANGES 1
+//#define DEBUG_CMD 1
+//#define DEBUG_CONNECT 1
 
-
-
-// Device status/.
-bool goingUp = false;
-bool goingDown = false;
-AvgThresh<16> liftCurrent(500,495,515);
-
-static Switch upButton( UP_BUTTON_IN );
-static Switch downButton( DOWN_BUTTON_IN );
 
 
 // Network objects
@@ -65,58 +33,23 @@ RF24 rf24Radio( RF24_CE, RF24_CSN);
 RF24Network rf24Network(rf24Radio);
 RF24Mesh rf24Mesh(rf24Radio,rf24Network);
 RF24EthernetClass RF24Ethernet(rf24Radio,rf24Network,rf24Mesh);
-IPAddress myIP(10, 10, 2, 4);
+IPAddress myIP(10, 10, 2, 5);
 EthernetServer rf24EthernetServer(1000);
 
-// Leds
-Leds leds;
+// Relay
+unsigned char relayPins[8] = {6, 5, 7, 4, 3, 9, 2, 10};
+Relays<8> relays( relayPins );
 
-// Set the prescale values on the timers:
-// Avoid doing timer 0.
-void setupTimers()
-{
-    // On mega for phase correct mode:
-    //  1 : 31 kHz
-    //  2 : 3.9 kHz
-    //  3 : 490 Hz (default)
-    //  4 : 30 Hz
-    //  5 : less
-    //
-    // For fast mode, ~double these.
-    //
-    // Timers for pins:
-    //  #0 : pins 4, 13
-    //  #1 : pins 11, 12
-    //  #2 : pins 9, 10
-    //  #3:  pins 2, 3, 5
-    //  #4:  pins 6, 7, 8
-    //
-    // I use pins 2->8, so timers 2, 3, 4.
-    //int iScale = 1;
-    int iScale = 4;
-    PRESCALE_TIMER( 2, iScale );
-    PRESCALE_TIMER( 3, iScale );
-    PRESCALE_TIMER( 4, iScale );
-}
 
 
 // the setup function runs once when you press reset or power the board
 void setup() {
   Serial.begin(115200);
+  #if DEBUG_STARTUP
   Serial.println(F("Start"));
+  #endif
 
-  setupTimers();
-  
-  pinMode( UP_LED_OUT, OUTPUT);
-  pinMode( DOWN_LED_OUT, OUTPUT);
-  pinMode( SPEED_PWM, OUTPUT);
-  pinMode( CURRENT_LED_OUT, OUTPUT);
-
-  leds.init();
-
-  // Do these after network.being() to avoid mysterious interference....
-  upButton.setup();
-  downButton.setup();
+  relays.init();
   
   // Ethernet startup.
   Ethernet.begin(myIP);
@@ -125,104 +58,9 @@ void setup() {
   Ethernet.set_gateway(gwIP);
   rf24EthernetServer.begin();
   
+  #if DEBUG_STARTUP
   Serial.println(F("Ready"));
-}
-
-static long lastTimeUp = 0;
-static long lastTimeDown = 0;
-
-void changeUp( bool newUp )
-{
-    goingDown = false;
-    if (newUp != goingUp) {
-        goingUp = newUp;
-        #if DEBUG_CHANGES
-        Serial.print(F("Change goingUp to "));
-        Serial.println(goingUp);
-        #endif
-        if (newUp)
-            lastTimeUp = millis();
-    }
-}
-
-void changeDown( bool newDown )
-{
-    goingUp = false;
-    if (newDown != goingDown) {
-        goingDown = newDown;
-        #if DEBUG_CHANGES
-        Serial.print(F("Change goingDown to "));
-        Serial.println(goingDown);
-        #endif
-        if (newDown)
-            lastTimeDown = millis();
-    }
-}
-
-static long curHeight = 0;
-static bool fixtureRunning = false;
-
-static void updateFixtureRunning()
-{
-  #if 1
-  bool old = liftCurrent.isInRange();
-  int newCurrent = analogRead(CURRENT_IN);
-  int newAvg = liftCurrent.update( newCurrent );
-  fixtureRunning = !liftCurrent.isInRange();
-  if ( old != liftCurrent.isInRange() ) {
-    #if DEBUG_CHANGES
-    //Serial.print(F("Fixture running: "));
-    //Serial.print(newAvg);
-    //Serial.print(F(": "));
-    //Serial.println(fixtureRunning);
-    #endif
-  }
-  #else
-  // Debug mode with fixture unplugged.
-  fixtureRunning = (goingUp || goingDown);
   #endif
-}
-void updateHeight()
-{
-    long upPctPerSec = 42;
-    long downPctPerSec = 50;
-    long waitForStart = 1000;
-    long curTime = millis();
-    if (goingUp) {
-        long incr = (curTime - lastTimeUp);
-        if (!fixtureRunning) {
-            if (incr > waitForStart) {
-                // Reached top.
-                curHeight = 100000;
-                #if DEBUG_CHANGES
-                Serial.println(F("Reached top"));
-                #endif
-                changeUp(false);
-            }
-        } else {
-            curHeight += (incr * upPctPerSec)/10;
-            if (curHeight > (100000))
-                curHeight = 100000;
-            lastTimeUp = curTime;
-        }
-    } else if (goingDown) {
-        long incr = (curTime - lastTimeDown);
-        if (!fixtureRunning) {
-            if (incr > waitForStart) {
-                // Reached bottom
-                curHeight = 0;
-                #if DEBUG_CHANGES
-                Serial.println(F("Reached bottom"));
-                #endif
-                changeDown(false);
-            }
-        } else {
-            curHeight -= (incr * downPctPerSec)/10;
-            if (curHeight < 0)
-                curHeight = 0;
-            lastTimeDown = curTime;
-        }
-    }
 }
 
 //static RF24SerialIO rfs( &rf24Network );
@@ -233,18 +71,18 @@ static CommandParser rf24Parser( g_commandDescrs, &rfs );
 static Command serialCmd;
 static Command rf24Cmd;
 
-// Ack with the current height.
-//  height: int
-//  moving: 1/0
-static void getHeightCmd( Command* cmd )
+static void getStatus( Command* cmd )
 {
     StaticJsonBuffer<200> jsonBuffer;
 
     JsonObject& json = jsonBuffer.createObject();
-    json["height"] = curHeight / 1000;
-    json["moving"] = (int)((goingUp || goingDown) ? 1 : 0);
+    JsonArray& on = json.createNestedArray("on");
+    for (unsigned char p=0; p < 8; p++ ) {
+        on.add( relays.isOn(p) );
+    }
     cmd->ack( json );
 }
+
 
 void processCommand()
 {
@@ -264,50 +102,34 @@ void processCommand()
         switch ( cmd->kind() ) {
             case CmdNone:
                 break;
+
             case CmdPing:
                 break;
-            case CmdStop:
-                changeUp( false );
-                changeDown( false );
+
+            case CmdAllOff:
+                relays.allOff();
                 break;
-            case CmdDown:  {
-                changeDown( true );
-                break;
-            }
-            case CmdUp: {
-                int pct;
-                cmd->arg(0)->getInt(pct);
-                changeUp( true );
+
+            case CmdOn: {
+                int p;
+                cmd->arg(0)->getInt(p);
+                relays.on(p);
                 break;
             }
-            case CmdCalibrate:
-                break;
-            case CmdGetHeight:
-                getHeightCmd( cmd );
-                needResp = false;
-                break;
-            case CmdRFState:
-                rf24EthernetServer.dumpstate();
-                break;
-            case CmdDim: {
-                int pct;
-                if (cmd->arg(0)->getInt(pct)) {
-                    #if 1
-                    leds.dimAll(pct);
-                    #else
-                    //leds.dimOne(WHITE_LED,pct);
-                    leds.dimOne(VIOLET_LED,pct);
-                    //leds.dimOne(ROYAL_BLUE_LED,pct);
-                    //leds.dimOne(BLUE_LED,pct);
-                    //leds.dimOne(CYAN_LED,pct);
-                    //leds.dimOne(RED_LED ,pct);
-                    //leds.dimOne(AMBER_LED,pct);
-                    #endif
-                }
+            case CmdOff: {
+                int p;
+                cmd->arg(0)->getInt(p);
+                relays.off(p);
                 break;
             }
+            case CmdStatus:
+                getStatus(cmd);
+                break;
+
             default:
+                #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
+                #endif
                 break;
         }
         if (needResp) {
@@ -315,7 +137,9 @@ void processCommand()
         }
         cmd->parser()->reset();
     } else if (error) {
+        #if DEBUG_CMD
         Serial.println(F("Error in command\n"));
+        #endif
     }
 }
 
@@ -329,8 +153,10 @@ static void renewMesh()
             //refresh the network address
             rf24Mesh.renewAddress();
 
+            #if DEBUG_CONNECT
             Serial.print(F("Connection renewal:"));
             Serial.println( rf24Mesh.checkConnection() );
+            #endif
         }  else {
             //Serial.print(F("Connection good."));
         }
@@ -340,22 +166,7 @@ static void renewMesh()
 // the loop function runs over and over again forever
 void loop() {
   renewMesh();
-  upButton.update();
-  downButton.update();
-  if (upButton.changed() && upButton.isOn()) {
-    changeUp( !goingUp );
-  }
-  if (downButton.changed() && downButton.isOn()) {
-    changeDown( !goingDown );
-  }
-  updateFixtureRunning();
-  updateHeight();
 
   processCommand();
-
-  digitalWrite(UP_LED_OUT, goingUp);  
-  digitalWrite(DOWN_LED_OUT, goingDown);
-  digitalWrite(SPEED_PWM, (goingUp | goingDown));
-  digitalWrite(CURRENT_LED_OUT, fixtureRunning);
 }
 
