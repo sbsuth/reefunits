@@ -101,9 +101,19 @@ THIRDPARTYLIB_ENABLED +=  RF24  RF24Network RF24Mesh RF24Ethernet ArduinoJson
 
 endif
 
+ifeq ($(USE_PING),1)
+
+# third-party libraries
+THIRDPARTYLIB_ENABLED +=  NewPing
+
+endif
+
+
 F_CPU := 16000000L
 FORMAT := ihex
+ifeq ($(UPLOAD_RATE),)
 UPLOAD_RATE := 115200
+endif
 #PORT := /dev/tty.usbserial*
 ifeq ($(PORT),)
 PORT := \\.\COM3
