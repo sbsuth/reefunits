@@ -4,7 +4,7 @@
 template <int N>
 class Avg {
   public:
-    Avg( short center ) 
+    Avg( short center=0 ) 
        : m_avg(center)
     {
        for ( int i=0; i < N; i++ )
