@@ -24,7 +24,7 @@ class SingleDistanceSensor : public NewPing
     void getEcho();
 
     Avg<16> m_values;
-    unsigned m_nextPing;
+    unsigned long m_nextPing;
     bool m_waiting;
 
 };

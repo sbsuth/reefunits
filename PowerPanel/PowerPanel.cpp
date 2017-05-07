@@ -151,6 +151,9 @@ static void renewMesh()
         mesh_timer  = now;
         if( ! rf24Mesh.checkConnection() ){
             //refresh the network address
+            #if DEBUG_CONNECT
+            Serial.println(F("Start reconnect..."));
+            #endif
             rf24Mesh.renewAddress();
 
             #if DEBUG_CONNECT
@@ -158,7 +161,9 @@ static void renewMesh()
             Serial.println( rf24Mesh.checkConnection() );
             #endif
         }  else {
-            //Serial.print(F("Connection good."));
+            #if DEBUG_CONNECT
+            Serial.print(F("Connection good."));
+            #endif
         }
     }
 }

@@ -14,7 +14,7 @@ SingleDistanceSensor::SingleDistanceSensor( int trig, int echo )
 // Called from main loop to update and get newest value.
 unsigned short SingleDistanceSensor::update() {
     if (!m_waiting) {
-        int curTime = millis();
+        unsigned long curTime = millis();
         if (curTime > m_nextPing) {
             ping_timer(getEchoCB);
             m_waiting = true;
