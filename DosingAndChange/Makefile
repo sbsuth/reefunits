@@ -1,0 +1,14 @@
+PROJECT = DosingAndChange
+USE_RF24 =1
+USE_PING =1
+MCU := atmega328p
+ARDUINO_VERSION := 10607
+PORT := \\.\COM8
+UPLOAD_RATE := 57600
+
+include ../utils/Makefile.arduino
+
+serial:
+	C:/Program\ Files\ \(x86\)/PuTTY/putty.exe -load Arduino &
+
+-include Makefile.d
