@@ -93,20 +93,18 @@
 BUILTINLIB_ENABLED :=  
 #THIRDPARTYLIB_ENABLED +=  utils
 ifeq ($(USE_RF24),1)
-
 BUILTINLIB_ENABLED +=  SPI EEPROM
-
-# third-party libraries
 THIRDPARTYLIB_ENABLED +=  RF24  RF24Network RF24Mesh RF24Ethernet ArduinoJson
-
 endif
 
 ifeq ($(USE_PING),1)
-
-# third-party libraries
 THIRDPARTYLIB_ENABLED +=  NewPing
-
 endif
+
+ifeq ($(USE_STEPPER),1)
+THIRDPARTYLIB_ENABLED +=  StepperDriver
+endif
+
 
 
 F_CPU := 16000000L
