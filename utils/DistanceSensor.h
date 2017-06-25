@@ -4,7 +4,12 @@
 #include "Avg.h"
 #include "NewPing.h"
 
+// Min interval for pings.
 #define PING_INTERVAL_MS 20
+
+// If we go longer than this many ms, presume we won't get an answer,
+// which is what happens if you're over range.
+#define PING_TIMEOUT_MS 100
 
 
 // Class to collect data from a single ultrasonic distance sensor.
@@ -13,7 +18,7 @@
 class SingleDistanceSensor : public NewPing
 {
   public:
-    SingleDistanceSensor( int trig, int echo );
+    SingleDistanceSensor( int trig, int echo, int maxDist );
     unsigned short update();
 
   protected:

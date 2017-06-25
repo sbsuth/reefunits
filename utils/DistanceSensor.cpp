@@ -1,10 +1,12 @@
 #include "DistanceSensor.h"
 
+
+
 // static data decl
 SingleDistanceSensor*    SingleDistanceSensor::m_sensor = 0;
 
-SingleDistanceSensor::SingleDistanceSensor( int trig, int echo )
-    : NewPing( trig, echo, 40 )
+SingleDistanceSensor::SingleDistanceSensor( int trig, int echo, int maxDist )
+    : NewPing( trig, echo, maxDist )
     , m_nextPing(millis())
     , m_waiting(false)
 {
@@ -13,8 +15,11 @@ SingleDistanceSensor::SingleDistanceSensor( int trig, int echo )
 
 // Called from main loop to update and get newest value.
 unsigned short SingleDistanceSensor::update() {
-    if (!m_waiting) {
-        unsigned long curTime = millis();
+
+    unsigned long curTime = millis();
+    bool timedOut = (curTime > (m_nextPing + PING_TIMEOUT_MS));
+
+    if (!m_waiting || timedOut) {
         if (curTime > m_nextPing) {
             ping_timer(getEchoCB);
             m_waiting = true;
