@@ -43,7 +43,7 @@ IPAddress myIP(10, 10, 2, 6);
 EthernetServer rf24EthernetServer(1000);
 
 // Ultrasonic
-SingleDistanceSensor distanceSensor( TRIG, ECHO );
+SingleDistanceSensor distanceSensor( TRIG, ECHO, 40 );
 
 
 // Float switch
