@@ -11,6 +11,7 @@
 #include <RF24Network.h>
 #include <RF24Ethernet.h>
 #include <ArduinoJson.h>
+#include <DRV8825.h>
 
 #include "Command.h"
 #include "DistanceSensor.h"
@@ -24,6 +25,25 @@
 #define TOP_PUMP         5
 #define BOTTOM_PUMP      6
 #define RO_SOLENOID      7
+
+
+#define CALC_DIR        18
+#define CALC_STEP       19
+#define ALK_DIR         16
+#define ALK_STEP        17
+#define MAG_DIR         14
+#define MAG_STEP        15
+#define OLD_OUT_DIR     4
+#define OLD_OUT_STEP    5
+#define NEW_IN_DIR      2
+#define NEW_IN_STEP     3
+
+#define CALC_PUMP   0
+#define ALK_PUMP    1
+#define MAG_PUMP    2
+#define OLD_OUT_PUMP 3
+#define NEW_IN_PUMP 4
+#define NUM_PUMPS   5
 
 
 // Debug prints.
@@ -43,11 +63,21 @@ IPAddress myIP(10, 10, 2, 8);
 EthernetServer rf24EthernetServer(1000);
 
 // Ultrasonic
-SingleDistanceSensor distanceSensor( TRIG, ECHO );
+SingleDistanceSensor distanceSensor( TRIG, ECHO, 80 );
+unsigned short lastDist = 0;
 
 
 // Float switch
 Switch floatSwitch( FLOAT_SW, LOW );
+
+// Dosing pumps
+DosingPump calcPump(  CALC_DIR,    CALC_STEP);
+DosingPump alkPump(   ALK_DIR,     ALK_STEP);
+DosingPump magPump(   MAG_DIR,     MAG_STEP );
+DosingPump oldOutPump(OLD_OUT_DIR, OLD_OUT_STEP);
+DosingPump newInPump( NEW_IN_DIR,  NEW_IN_STEP);
+
+DosingPump* pumps[NUM_PUMPS] = {&calcPump, &alkPump, &magPump, &oldOutPump, &newInPump};
 
 // State vars
 
@@ -75,6 +105,11 @@ void setup() {
     Ethernet.set_gateway(gwIP);
     rf24EthernetServer.begin();
 
+    // Init pumps.
+    for ( int i=0; i < NUM_PUMPS; i++ ) {
+        pumps[i]->init();
+    }
+
     extPause = false;
 
     #if DEBUG_STARTUP
@@ -91,9 +126,22 @@ static Command rf24Cmd;
 
 static void getStatus( Command* cmd )
 {
-    StaticJsonBuffer<200> jsonBuffer;
+    StaticJsonBuffer<700> jsonBuffer;
 
     JsonObject& json = jsonBuffer.createObject();
+    json["dist"] = lastDist;
+    json["float_sw"] = floatSwitch.isOn();
+    JsonArray& jsonPumps = json.createNestedArray("pumps");
+    for (unsigned char p=0; p < NUM_PUMPS; p++ ) {
+        DosingPump* pump = pumps[p];
+        JsonObject& jsonPump = jsonBuffer.createObject();
+        jsonPump["en"] = pump->enabled();
+        jsonPump["is_disp"] = pump->isDispensing();
+        jsonPump["tot_disp"] = pump->dispensedMl();
+        jsonPump["to_disp"] = pump->toDispenseMl();
+        jsonPump["spml"] = pump->stepsPerMl();
+        jsonPumps.add( jsonPump );
+    }
     cmd->ack( json );
 }
 
@@ -123,22 +171,81 @@ void processCommand()
                 getStatus(cmd);
                 break;
 
-            case CmdPumpOn: {
-                int p;
-                cmd->arg(0)->getInt(p);
-                #if DEBUG_CMD
-				Serial.print("CHANGE: Got pump on ");
-				Serial.println(p);
-				#endif
+            case CmdEnable: {
+                // 1 means decr disable, 0 incr disable.
+                int en;
+                cmd->arg(0)->getInt(en);
+                for ( int i=0 ; i < NUM_PUMPS; i++ ) {
+                    if (en)
+                        pumps[i]->enable();
+                    else
+                        pumps[i]->disable();
+                }
                 break;
             }
-            case CmdPumpOff: {
-                int p;
-                cmd->arg(0)->getInt(p);
+            case CmdResetAll: {
+                for ( int i=0 ; i < NUM_PUMPS; i++ ) {
+                    pumps[i]->reset();
+                }
+                break;
+            }
+            case CmdDispense: {
+                int p = cmd->ID();
+                if ((p >= NUM_PUMPS) || (p < 0))
+                    break;
+                int ml;
+                cmd->arg(0)->getInt(ml);
                 #if DEBUG_CMD
-				Serial.print("CHANGE: Got pump on ");
+				Serial.print("CHANGE: Got dispense on ");
+				Serial.print(p);
+                Serial.print(" for ");
+                Serial.print(ml);
+                Serial.println("ml");
+				#endif
+                pumps[p]->startDispense(ml);
+                break;
+            }
+            case CmdCal: {
+                int p = cmd->ID();
+                if ((p >= NUM_PUMPS) || (p < 0))
+                    break;
+                int ml;
+                #if DEBUG_CMD
+				Serial.print("CHANGE: Got cal on ");
 				Serial.println(p);
 				#endif
+                pumps[p]->startCal();
+                break;
+            }
+            case CmdCalRslt: {
+                int p = cmd->ID();
+                if ((p >= NUM_PUMPS) || (p < 0))
+                    break;
+                int ml;
+                cmd->arg(0)->getInt(ml);
+                #if DEBUG_CMD
+				Serial.print("CHANGE: Got actual for ");
+				Serial.print(p);
+                Serial.print(" of ");
+                Serial.print(ml);
+                Serial.println("ml");
+				#endif
+                pumps[p]->setActualMl(ml);
+                break;
+            }
+            case CmdStepsPerMl: {
+                int p = cmd->ID();
+                if ((p >= NUM_PUMPS) || (p < 0))
+                    break;
+                int steps;
+                cmd->arg(0)->getInt(steps);
+                #if DEBUG_CMD
+				Serial.print("CHANGE: Got step per ml for ");
+				Serial.print(p);
+                Serial.print(" of ");
+                Serial.println(steps);
+				#endif
+                pumps[p]->setStepsPerMl(steps);
                 break;
             }
             default:
@@ -157,6 +264,7 @@ void processCommand()
         #endif
     }
 }
+
 
 static uint32_t mesh_timer = 0;
 static void renewMesh()
@@ -184,15 +292,14 @@ static void renewMesh()
     }
 }
 
-unsigned short lastDist = 0;
 
 // the loop function runs over and over again forever
 void loop() {
-  //renewMesh();
+  renewMesh();
   unsigned short dist = distanceSensor.update();
   if (dist != lastDist) {
-    //Serial.print("Dist=");
-    //Serial.println(dist);
+    Serial.print("Dist=");
+    Serial.println(dist);
     lastDist = dist;
   }
   floatSwitch.update();
@@ -202,6 +309,10 @@ void loop() {
     Serial.println( floatSwitch.isOn() ? "CLOSED" : "OPEN");
     #endif
   }
+  for ( int i=0 ; i < NUM_PUMPS; i++ ) {
+    pumps[i]->update();
+  }
+  
   processCommand();
 }
 
