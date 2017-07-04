@@ -9,12 +9,15 @@ SingleDistanceSensor::SingleDistanceSensor( int trig, int echo, int maxDist )
     : NewPing( trig, echo, maxDist )
     , m_nextPing(millis())
     , m_waiting(false)
+    , m_lastSample(0)
 {
     m_sensor = this; // only one!  Could make a vector to expand
 }
 
 // Called from main loop to update and get newest value.
-unsigned short SingleDistanceSensor::update() {
+// Sets 'changed' to true if the value is different to the last time
+// update() was called.
+bool SingleDistanceSensor::update( unsigned short& val ) {
 
     unsigned long curTime = millis();
     bool timedOut = (curTime > (m_nextPing + PING_TIMEOUT_MS));
@@ -26,7 +29,10 @@ unsigned short SingleDistanceSensor::update() {
             m_nextPing = curTime + PING_INTERVAL_MS;
         }
     }
-    return m_values.avg();
+    val = m_values.avg();
+    bool changed = (val != m_lastSample);
+    m_lastSample = val;
+    return changed;
 }
 
 // Non-static timer callback.

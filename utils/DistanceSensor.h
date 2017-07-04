@@ -19,7 +19,11 @@ class SingleDistanceSensor : public NewPing
 {
   public:
     SingleDistanceSensor( int trig, int echo, int maxDist );
-    unsigned short update();
+
+    bool update( unsigned short & val );
+    unsigned short lastSample() {
+        return m_lastSample;
+    }
 
   protected:
     static SingleDistanceSensor*    m_sensor;
@@ -31,6 +35,7 @@ class SingleDistanceSensor : public NewPing
     Avg<16> m_values;
     unsigned long m_nextPing;
     bool m_waiting;
+    unsigned short m_lastSample;
 
 };
 
