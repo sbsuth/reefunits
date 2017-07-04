@@ -277,7 +277,7 @@ eep: $(PROJECT).eep
 lss: $(PROJECT).lss 
 sym: $(PROJECT).sym
 
-size: 
+size:  build
 	@$(SIZE) $(PROJECT).elf
 
 # upload the program to the arduino board
@@ -412,16 +412,17 @@ depend:
 	rm -f $(MAKEFILE).d
 	for F in $(SRC); do \
 	D=`dirname $$F | sed "s/^\.\///"`; \
-	echo -n "$$D/" >> $(MAKEFILE).d; \
+	echo -n "$$D/$(MCU)/" >> $(MAKEFILE).d; \
 	$(CC) -M -mmcu=$(MCU) $(CDEFS) $(CINCS) $(ASRC) $$F \
 	>> $(MAKEFILE).d; \
 	done
 	for F in $(CXXSRC); do \
 	D=`dirname $$F | sed "s/^\.\///"`; \
-	echo -n "$$D/" >> $(MAKEFILE).d; \
+	echo -n "$$D/$(MCU)/" >> $(MAKEFILE).d; \
 	$(CXX) -M -mmcu=$(MCU) $(CXXDEFS) $(CXXINCS) $(ASRC) $$F \
 	>> $(MAKEFILE).d; \
 	done
+
 
 x:
 	@echo "A: $(CXXSRC)"
