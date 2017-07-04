@@ -1,5 +1,4 @@
-#include <RF24Ethernet.h>
-#include <SPI.h>
+#include <RF24Interface.h>
 #include <ArduinoJson.h>
 #include <Command.h>
 
@@ -8,8 +7,6 @@
 //#define DEBUG_ACK 1
 
 // Static variable decls.
-//RF24NetworkHeader RF24SerialIO::m_header;
-//EthernetClient EthernetSerialIO::m_client; 
 
 // Convert to lower case with optional enable.
 char lc(char c, bool ic=false) {
@@ -335,15 +332,19 @@ static const char json_resp_header[] PROGMEM =
   "Content-Type: application/jsonrequest\r\n"
   "Content-Length: ";
 
+void EthernetSerialIO::pingActivity() {
+    m_interface->pingHeartbeat();
+}
+
 bool EthernetSerialIO::read( char* c ) {
-    EthernetClient newClient = m_server->available();
-    //m_client = m_server->available();
+    EthernetClient newClient = m_interface->getServer().available();
     int n = newClient.available();
     static bool first = true;
     if (n > 0) {
         m_client = newClient; // Limit is 1 in library, so we get away with this...
         *c = m_client.read();
         first = false;
+        pingActivity();
         return true;
     } else {
         return false;
@@ -359,6 +360,7 @@ void EthernetSerialIO::ack( Command* cmd )
     #if DEBUG_ACK
     Serial.print(F("Send empty ack for cmd #")); Serial.println((int)cmd->kind());
     #endif
+    pingActivity();
 }
 
 void EthernetSerialIO::ack( Command* cmd, JsonObject& json )
@@ -370,6 +372,7 @@ void EthernetSerialIO::ack( Command* cmd, JsonObject& json )
     Serial.print(F("Send ack for cmd #")); Serial.println((int)cmd->kind());
     #endif
     json.printTo(this->client());
+    pingActivity();
 }
 
 #if defined(ARDUINO)

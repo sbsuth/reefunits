@@ -241,6 +241,7 @@ class InStream
     virtual void ack( Command* cmd, JsonObject& json ) {
         ack(cmd);
     }
+    virtual void pingActivity() {}
 };
 
 #if USE_STDIO
@@ -319,8 +320,8 @@ class RF24SerialIO : public InStream
 class EthernetSerialIO : public InStream 
 {
   public:
-    EthernetSerialIO( EthernetServer* server )
-		: m_server(server)
+    EthernetSerialIO( RF24IPInterface* interface )
+		: m_interface(interface)
     {
     }
     bool read( char* c );
@@ -335,8 +336,10 @@ class EthernetSerialIO : public InStream
     EthernetClient& client() {
         return m_client;
     }
+    virtual void pingActivity();
+        
   protected:
-    EthernetServer* m_server;
+    RF24IPInterface* m_interface;
     EthernetClient m_client; // Make it simple to get client from last command.
 };
 #endif
