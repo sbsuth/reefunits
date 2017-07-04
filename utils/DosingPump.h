@@ -1,17 +1,20 @@
 #ifndef DOSING_PUMP_H
 #define DOSING_PUMP_H
 
+#include <DRV8825.h>
+
 class DosingPump : public DRV8825 {
   public: 
-    DosingPump( int dir, int step ) 
+    DosingPump( int dir, int step, int isleep ) 
         : DRV8825( 200, dir, step )
+        , m_isleep(isleep)
         , m_disabled(true)
         , m_stepsPerMl(833)
         , m_stepsRemaining(0)
         , m_toDispenseMl(0)
     {}
-    void init() {
-        setRPM(250);
+    void init( unsigned rpm ) {
+        setRPM(rpm);
         setMicrostep(1);
         reset();
     }
@@ -20,7 +23,7 @@ class DosingPump : public DRV8825 {
         m_disabled = 0;
         m_toDispenseMl = 0;
     }
-    bool enabled() {
+    bool isEnabled() {
         return (m_disabled == 0);
     }
     void enable() {
@@ -68,7 +71,7 @@ class DosingPump : public DRV8825 {
     }
 
     // Does a spurt if there's something to do and we're not disabled.
-    void update() {
+    void update( unsigned char en[] ) {
         if (!isDispensing() || m_disabled)
             return;
         static unsigned long stepsPerIter = 50;
@@ -80,6 +83,13 @@ class DosingPump : public DRV8825 {
             steps = m_stepsRemaining;
             m_stepsRemaining = 0;
         }
+
+        unsigned char sleepPin = en[m_isleep];
+        if (steps && sleepPin) {
+            digitalWrite( sleepPin, 1 );
+            en[m_isleep] = 0;
+        }
+
         move(steps);
     }
 
@@ -105,6 +115,7 @@ class DosingPump : public DRV8825 {
     }
    
   protected:
+    unsigned char  m_isleep;
     unsigned short m_disabled;
     unsigned long  m_stepsRemaining;
     unsigned short m_toDispenseMl;
