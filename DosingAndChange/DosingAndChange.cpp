@@ -1,41 +1,48 @@
 /*
  */
 
+// These are above #includes so they can affect utilities in headers.
+#define DEBUG_STARTUP 0
+#define DEBUG_CHANGES 0
+#define DEBUG_CMD 0
+#define DEBUG_CONNECT 0
+#define DEBUG_MEM 0
+
+
 #include <Arduino.h>
 #include "Switch.h"
 #include "Avg.h"
 
-#include <SPI.h>
-#include <RF24.h>
-#include <RF24Mesh.h>
-#include <RF24Network.h>
-#include <RF24Ethernet.h>
 #include <ArduinoJson.h>
-#include <DRV8825.h>
+#include <DosingPump.h>
+
+#include "RF24Interface.h"
 
 #include "Command.h"
 #include "DistanceSensor.h"
-
+#if DEBUG_MEM
+#include "MemUtils.h"
+#endif
 
 #define RF24_CE          9
 #define RF24_CSN         10
+
 #define TRIG             6
 #define ECHO             7
+
 #define FLOAT_SW         8
-#define TOP_PUMP         5
-#define BOTTOM_PUMP      6
-#define RO_SOLENOID      7
 
-
-#define CALC_DIR        18
+#define DOSING_DIR      18
+#define DOSING_I_SLEEP   0
+#define DOSING_SLEEP    14
 #define CALC_STEP       19
-#define ALK_DIR         16
 #define ALK_STEP        17
-#define MAG_DIR         14
 #define MAG_STEP        15
-#define OLD_OUT_DIR     4
+
+#define H2OX_DIR        4
+#define H2OX_I_SLEEP    1
+#define H2OX_SLEEP      2
 #define OLD_OUT_STEP    5
-#define NEW_IN_DIR      2
 #define NEW_IN_STEP     3
 
 #define CALC_PUMP   0
@@ -46,42 +53,34 @@
 #define NUM_PUMPS   5
 
 
-// Debug prints.
-#define DEBUG_STARTUP 1
-#define DEBUG_CHANGES 1
-#define DEBUG_CMD 1
-#define DEBUG_CONNECT 1
 
-
-
-// Network objects
-RF24 rf24Radio( RF24_CE, RF24_CSN);
-RF24Network rf24Network(rf24Radio);
-RF24Mesh rf24Mesh(rf24Radio,rf24Network);
-RF24EthernetClass RF24Ethernet(rf24Radio,rf24Network,rf24Mesh);
-IPAddress myIP(10, 10, 2, 8);
-EthernetServer rf24EthernetServer(1000);
+// Network.
+RF24IPInterface rf24( 8, RF24_CE, RF24_CSN );
+RF24EthernetClass   RF24Ethernet( rf24.getRadio(), rf24.getNetwork(), rf24.getMesh() );
 
 // Ultrasonic
 SingleDistanceSensor distanceSensor( TRIG, ECHO, 80 );
-unsigned short lastDist = 0;
 
 
 // Float switch
 Switch floatSwitch( FLOAT_SW, LOW );
 
+#define PUMPS 1
+
+#if PUMPS
 // Dosing pumps
-DosingPump calcPump(  CALC_DIR,    CALC_STEP);
-DosingPump alkPump(   ALK_DIR,     ALK_STEP);
-DosingPump magPump(   MAG_DIR,     MAG_STEP );
-DosingPump oldOutPump(OLD_OUT_DIR, OLD_OUT_STEP);
-DosingPump newInPump( NEW_IN_DIR,  NEW_IN_STEP);
+DosingPump calcPump(  DOSING_DIR,   CALC_STEP,      DOSING_I_SLEEP);
+DosingPump alkPump(   DOSING_DIR,   ALK_STEP,       DOSING_I_SLEEP);
+DosingPump magPump(   DOSING_DIR,   MAG_STEP,       DOSING_I_SLEEP );
+DosingPump oldOutPump(H2OX_DIR,     OLD_OUT_STEP,   H2OX_I_SLEEP);
+DosingPump newInPump( H2OX_DIR,     NEW_IN_STEP,    H2OX_I_SLEEP);
 
 DosingPump* pumps[NUM_PUMPS] = {&calcPump, &alkPump, &magPump, &oldOutPump, &newInPump};
+unsigned short pumpRPM[NUM_PUMPS] = {200, 200, 200, 200, 200};
+#endif
 
 // State vars
 
-bool extPause = false;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -90,27 +89,19 @@ void setup() {
     Serial.println(F("Start"));
     #endif
 
-
-    digitalWrite( TOP_PUMP, 1 );
-    digitalWrite( BOTTOM_PUMP, 1 );
-    pinMode( TOP_PUMP, OUTPUT );
-    pinMode( BOTTOM_PUMP, OUTPUT );
-
     floatSwitch.setup();
   
     // Ethernet startup.
-    Ethernet.begin(myIP);
-    rf24Mesh.begin(MESH_DEFAULT_CHANNEL, RF24_1MBPS, 5000);
-    IPAddress gwIP(10, 10, 2, 2);
-    Ethernet.set_gateway(gwIP);
-    rf24EthernetServer.begin();
+    rf24.init();
 
+#if PUMPS
     // Init pumps.
     for ( int i=0; i < NUM_PUMPS; i++ ) {
-        pumps[i]->init();
+        pumps[i]->init( pumpRPM[i] );
     }
-
-    extPause = false;
+    pinMode( DOSING_SLEEP, OUTPUT );
+    pinMode( H2OX_SLEEP, OUTPUT );
+#endif
 
     #if DEBUG_STARTUP
     Serial.println(F("Ready"));
@@ -119,35 +110,63 @@ void setup() {
 
 static ArduinoSerialIO sis;
 static CommandParser serialParser( g_commandDescrs, &sis );
-static EthernetSerialIO rfs( &rf24EthernetServer );
+static EthernetSerialIO rfs( &rf24 );
 static CommandParser rf24Parser( g_commandDescrs, &rfs );
 static Command serialCmd;
 static Command rf24Cmd;
 
-static void getStatus( Command* cmd )
+static void getStatus( Command* cmd, int ipump )
 {
-    StaticJsonBuffer<700> jsonBuffer;
+    //StaticJsonBuffer<128> jsonBuffer;
+    DynamicJsonBuffer jsonBuffer(128);
 
     JsonObject& json = jsonBuffer.createObject();
-    json["dist"] = lastDist;
-    json["float_sw"] = floatSwitch.isOn();
-    JsonArray& jsonPumps = json.createNestedArray("pumps");
-    for (unsigned char p=0; p < NUM_PUMPS; p++ ) {
-        DosingPump* pump = pumps[p];
-        JsonObject& jsonPump = jsonBuffer.createObject();
-        jsonPump["en"] = pump->enabled();
-        jsonPump["is_disp"] = pump->isDispensing();
-        jsonPump["tot_disp"] = pump->dispensedMl();
-        jsonPump["to_disp"] = pump->toDispenseMl();
-        jsonPump["spml"] = pump->stepsPerMl();
-        jsonPumps.add( jsonPump );
+
+    if (ipump < 0) {
+        json["dist"] = distanceSensor.lastSample();
+        json["float_sw"] = floatSwitch.isOn();
+        int numActive = 0;
+        int numDisabled = 0;
+        #if PUMPS
+        for ( ipump=0; ipump < NUM_PUMPS; ipump++ ) {
+            DosingPump* pump = pumps[ipump];
+            if (!pump->isEnabled())
+                numDisabled++;
+            if (pump->isDispensing())
+                numActive++;
+        }
+        #endif
+        json["num_active"] = numActive;
+        json["num_dis"] = numDisabled;
+    } else if (ipump < NUM_PUMPS) {
+        #if PUMPS
+        DosingPump* pump = pumps[ipump];
+        json["en"] = pump->isEnabled();
+        json["is_disp"] = pump->isDispensing();
+        json["tot_disp"] = pump->dispensedMl();
+        json["to_disp"] = pump->toDispenseMl();
+        json["spml"] = pump->stepsPerMl();
+        #else
+        json["en"] = true;
+        json["is_disp"] = true;
+        json["tot_disp"] = 100;
+        json["to_disp"] = 100;
+        json["spml"] = 100;
+        #endif
     }
     cmd->ack( json );
+
+    #if DEBUG_MEM
+    MemChecker::log_mem();
+    #endif
 }
 
 void processCommand()
 {
 
+    int arg;
+    int p;
+    int i;
     bool error = false;
     Command* cmd = 0;
     if ( (cmd=serialParser.getCommand( &serialCmd, error )) ) {
@@ -168,15 +187,19 @@ void processCommand()
                 break;
 
             case CmdStatus:
-                getStatus(cmd);
+                getStatus(cmd,-1);
                 break;
 
+            case CmdPumpStatus:
+                getStatus(cmd, cmd->ID());
+                break;
+
+            #if PUMPS
             case CmdEnable: {
                 // 1 means decr disable, 0 incr disable.
-                int en;
-                cmd->arg(0)->getInt(en);
-                for ( int i=0 ; i < NUM_PUMPS; i++ ) {
-                    if (en)
+                cmd->arg(0)->getInt(arg);
+                for ( i=0 ; i < NUM_PUMPS; i++ ) {
+                    if (arg)
                         pumps[i]->enable();
                     else
                         pumps[i]->disable();
@@ -184,32 +207,30 @@ void processCommand()
                 break;
             }
             case CmdResetAll: {
-                for ( int i=0 ; i < NUM_PUMPS; i++ ) {
+                for ( i=0 ; i < NUM_PUMPS; i++ ) {
                     pumps[i]->reset();
                 }
                 break;
             }
             case CmdDispense: {
-                int p = cmd->ID();
+                p = cmd->ID();
                 if ((p >= NUM_PUMPS) || (p < 0))
                     break;
-                int ml;
-                cmd->arg(0)->getInt(ml);
+                cmd->arg(0)->getInt(arg);
                 #if DEBUG_CMD
 				Serial.print("CHANGE: Got dispense on ");
 				Serial.print(p);
                 Serial.print(" for ");
-                Serial.print(ml);
+                Serial.print(arg);
                 Serial.println("ml");
 				#endif
-                pumps[p]->startDispense(ml);
+                pumps[p]->startDispense(arg);
                 break;
             }
             case CmdCal: {
                 int p = cmd->ID();
                 if ((p >= NUM_PUMPS) || (p < 0))
                     break;
-                int ml;
                 #if DEBUG_CMD
 				Serial.print("CHANGE: Got cal on ");
 				Serial.println(p);
@@ -221,16 +242,15 @@ void processCommand()
                 int p = cmd->ID();
                 if ((p >= NUM_PUMPS) || (p < 0))
                     break;
-                int ml;
-                cmd->arg(0)->getInt(ml);
+                cmd->arg(0)->getInt(arg);
                 #if DEBUG_CMD
 				Serial.print("CHANGE: Got actual for ");
 				Serial.print(p);
                 Serial.print(" of ");
-                Serial.print(ml);
+                Serial.print(arg);
                 Serial.println("ml");
 				#endif
-                pumps[p]->setActualMl(ml);
+                pumps[p]->setActualMl(arg);
                 break;
             }
             case CmdStepsPerMl: {
@@ -248,6 +268,7 @@ void processCommand()
                 pumps[p]->setStepsPerMl(steps);
                 break;
             }
+            #endif
             default:
                 #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
@@ -263,45 +284,21 @@ void processCommand()
         Serial.println(F("Error in command\n"));
         #endif
     }
+    #if DEBUG_MEM
+    MemChecker::log_mem();
+    #endif
 }
 
-
-static uint32_t mesh_timer = 0;
-static void renewMesh()
-{
-    uint32_t now = millis();
-    if ((now - mesh_timer) > 30000) {
-        mesh_timer  = now;
-        if( ! rf24Mesh.checkConnection() ){
-            #if DEBUG_CONNECT
-            Serial.println(F("Lost connection. Begin nenew.."));
-            #endif
-
-            //refresh the network address
-            rf24Mesh.renewAddress();
-
-            #if DEBUG_CONNECT
-            Serial.print(F("Connection renewal:"));
-            Serial.println( rf24Mesh.checkConnection() );
-            #endif
-        }  else {
-            #if DEBUG_CONNECT
-            Serial.print(F("Connection good."));
-            #endif
-        }
-    }
-}
 
 
 // the loop function runs over and over again forever
 void loop() {
-  renewMesh();
-  unsigned short dist = distanceSensor.update();
-  if (dist != lastDist) {
-    Serial.print("Dist=");
-    Serial.println(dist);
-    lastDist = dist;
-  }
+  #if DEBUG_MEM
+  MemChecker::reset();
+  #endif
+
+  rf24.update();
+
   floatSwitch.update();
   if (floatSwitch.changed()) {
     #if DEBUG_CHANGES
@@ -309,10 +306,47 @@ void loop() {
     Serial.println( floatSwitch.isOn() ? "CLOSED" : "OPEN");
     #endif
   }
-  for ( int i=0 ; i < NUM_PUMPS; i++ ) {
-    pumps[i]->update();
+
+  int nPumping = 0;
+  #if PUMPS
+  // Let pumps be run if required.  
+  // Each will enable itself, and clear en[i] if it does.
+  int i;
+  unsigned char en[2] = {DOSING_SLEEP,H2OX_SLEEP};
+  for ( i=0 ; i < NUM_PUMPS; i++ ) {
+    pumps[i]->update(en);
   }
+  // Disable each bank if none enabled it.
+  for ( i=0; i < 2; i++ ) {
+    if (en[i] > 0)
+        digitalWrite( en[i], LOW );
+    else
+        nPumping++;
+  }
+  #endif
+  
+  // Only check distance sensor while not pumping since it inserts a delay
+  // that makes pumps run roughly.
+  if (nPumping == 0) {
+      unsigned short dist;
+      if (distanceSensor.update(dist)) {
+        #if DEBUG_CHANGES
+        Serial.print("Dist=");
+        Serial.println(dist);
+        #endif
+      }
+    }
   
   processCommand();
+
+  #if DEBUG_MEM
+  static int last_gap = 0;
+  int gap = MemChecker::gap();
+  if (gap != last_gap) {
+      Serial.print("Mem gap=");
+      Serial.println(gap);
+      last_gap = gap;
+  }
+  #endif
 }
 
