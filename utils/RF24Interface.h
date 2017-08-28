@@ -61,6 +61,39 @@ class RF24IPInterface
             }
         }
     }
+    #if ENABLE_OUTGOING_ETHERNET
+    bool sendToRadioClient( unsigned char addr, const char* cmd, unsigned tries=1 )
+    {
+        return sendToClient( IPAddress(10,10,2,addr), 1000, cmd, tries );
+    }
+    bool sendToClient( const IPAddress& addr, uint16_t port, const char* cmd, unsigned tries=1 )
+    {
+        bool success = false;
+        while (tries-- && !success) {
+            Serial.println("Starting connect");
+            if (m_outgoing.connect(addr, port)) {
+            Serial.println("Connected");
+            Serial.print("Sending "); Serial.println(cmd);
+                m_outgoing.write( cmd, strlen(cmd) );
+                if (m_outgoing.waitAvailable()) {
+            Serial.println("GOt response");
+                    m_outgoing.flush();
+                    success = true;
+                } else {
+            Serial.println("No response");
+                    success = false;
+                }
+            } else {
+
+            Serial.println("Not Connected");
+                success = false;
+            }
+            m_outgoing.stop();
+        }
+
+        return success;
+    }
+    #endif
     EthernetServer& getServer() {
         return m_server;
     }
@@ -82,6 +115,9 @@ class RF24IPInterface
     RF24Mesh            m_mesh;
     IPAddress           m_ip;
     EthernetServer      m_server;
+    #if ENABLE_OUTGOING_ETHERNET
+    EthernetClient      m_outgoing;
+    #endif
     uint32_t            m_heartbeat;
 };
 
