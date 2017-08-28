@@ -31,3 +31,4 @@ examples_linux/*
 *.s#*
 ~$*
 *WRL*.tmp
+make.out
