@@ -1,8 +1,13 @@
+#if USE_RF24
 #include <RF24Interface.h>
+#endif
+#if USE_JSON
 #include <ArduinoJson.h>
+#endif
 #include <Command.h>
 
 //#define DEBUG_TOKEN 1
+//#define DEBUG_CHAR 1
 //#define DEBUG_HTTP 1
 //#define DEBUG_ACK 1
 
@@ -326,12 +331,15 @@ Command* CommandParser::getCommand( Command* cmd, bool& error )
     }
 }
 
+#if USE_JSON
 // Header for json response up to point requiring content length.
 static const char json_resp_header[] PROGMEM =
   "HTTP/1.1 200 OK\r\n"
   "Content-Type: application/jsonrequest\r\n"
   "Content-Length: ";
+#endif
 
+#if USE_RF24
 void EthernetSerialIO::pingActivity() {
     m_interface->pingHeartbeat();
 }
@@ -343,6 +351,9 @@ bool EthernetSerialIO::read( char* c ) {
     if (n > 0) {
         m_client = newClient; // Limit is 1 in library, so we get away with this...
         *c = m_client.read();
+        #if DEBUG_CHAR
+        Serial.print("CHAR: '");Serial.print(*c);Serial.println("'");
+        #endif
         first = false;
         pingActivity();
         return true;
@@ -374,12 +385,15 @@ void EthernetSerialIO::ack( Command* cmd, JsonObject& json )
     json.printTo(this->client());
     pingActivity();
 }
+#endif
 
 #if defined(ARDUINO)
 void ArduinoSerialIO::ack( Command* cmd, JsonObject& json )
 {
+    #if USE_JSON
     json.printTo(Serial);
     Serial.println("");
+    #endif
 }
 #endif
 

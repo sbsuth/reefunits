@@ -1,6 +1,7 @@
 #ifndef COMMAND_H
 #define COMMAND_H
 
+#include <Arduino.h>
 #include "common.h"
 
 #define DEF_CMD_MACROS 1
@@ -12,6 +13,10 @@ enum CommandKind {
     #include "cmds.h"
 };
 #undef X
+
+#if !USE_JSON
+class JsonObject;
+#endif
 
 enum CommandArgKind {
     CmdArgNone,
@@ -155,11 +160,11 @@ class Command {
 struct CommandDescr 
 {
     CommandKind kind() const {
-        uint8_t k = pgm_read_byte( &m_kind );
+        unsigned char k = pgm_read_byte( &m_kind );
         return (CommandKind)k;
     }
     bool hasID() const {
-        uint8_t hid = pgm_read_byte( &m_hasID );
+        unsigned char hid = pgm_read_byte( &m_hasID );
         return hid;
     }
     char* getStr( char* s, short len ) const {
@@ -188,16 +193,16 @@ struct CommandDescr
     }
     CommandArgKind argKind( ushort i ) const {
         if (i < MAX_ARGS) {
-            uint8_t k = pgm_read_byte( &m_args[i] );
+            unsigned char k = pgm_read_byte( &m_args[i] );
             return (CommandArgKind)k;
         } else {
             return CmdArgNone;
         }
     }
-    uint8_t m_kind;
+    unsigned char m_kind;
     const char*  m_str;
-    uint8_t m_hasID;
-    uint8_t m_args[MAX_ARGS];
+    unsigned char m_hasID;
+    unsigned char m_args[MAX_ARGS];
 };
 
 // Define PROGMEM string vars storing command name strings.
