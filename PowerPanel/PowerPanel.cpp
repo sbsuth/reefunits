@@ -5,11 +5,9 @@
 #include "Switch.h"
 #include "Avg.h"
 
+#include <EEPROM.h>
 #include <SPI.h>
-#include <RF24.h>
-#include <RF24Mesh.h>
-#include <RF24Network.h>
-#include <RF24Ethernet.h>
+#include "RF24Interface.h"
 #include <ArduinoJson.h>
 
 #include "Command.h"
@@ -29,17 +27,15 @@
 
 
 // Network objects
-RF24 rf24Radio( RF24_CE, RF24_CSN);
-RF24Network rf24Network(rf24Radio);
-RF24Mesh rf24Mesh(rf24Radio,rf24Network);
-RF24EthernetClass RF24Ethernet(rf24Radio,rf24Network,rf24Mesh);
-IPAddress myIP(10, 10, 2, 5);
+RF24IPInterface rf24( 5, RF24_CE, RF24_CSN );
+RF24EthernetClass   RF24Ethernet( rf24.getRadio(), rf24.getNetwork(), rf24.getMesh() );
 EthernetServer rf24EthernetServer(1000);
 
 // Relay
 unsigned char relayPins[8] = {6, 5, 7, 4, 3, 9, 2, 10};
-Relays<8> relays( relayPins );
+Relays<8> relays( relayPins, 1 );
 
+#define EE_SIG 123
 
 
 // the setup function runs once when you press reset or power the board
@@ -49,14 +45,16 @@ void setup() {
   Serial.println(F("Start"));
   #endif
 
-  relays.init();
+  // Check for current signature to determine if settings should be reset.
+  unsigned char sig = 0;
+  EEPROM.get( 0, sig );
+  bool useSettings = (sig == EE_SIG);
+  EEPROM.put( 0, EE_SIG );
+
+  relays.init(useSettings);
   
   // Ethernet startup.
-  Ethernet.begin(myIP);
-  rf24Mesh.begin(MESH_DEFAULT_CHANNEL, RF24_1MBPS, 5000);
-  IPAddress gwIP(10, 10, 2, 2);
-  Ethernet.set_gateway(gwIP);
-  rf24EthernetServer.begin();
+  rf24.init();
   
   #if DEBUG_STARTUP
   Serial.println(F("Ready"));
@@ -66,7 +64,7 @@ void setup() {
 //static RF24SerialIO rfs( &rf24Network );
 static ArduinoSerialIO sis;
 static CommandParser serialParser( g_commandDescrs, &sis );
-static EthernetSerialIO rfs( &rf24EthernetServer );
+static EthernetSerialIO rfs( &rf24 );
 static CommandParser rf24Parser( g_commandDescrs, &rfs );
 static Command serialCmd;
 static Command rf24Cmd;
@@ -83,6 +81,19 @@ static void getStatus( Command* cmd )
     cmd->ack( json );
 }
 
+static void saveSettings()
+{
+    EEPROM.put( 0, EE_SIG );
+    relays.saveSettings();
+}
+
+static void restoreSettings()
+{
+    unsigned char sig = 0;
+    EEPROM.get( 0, sig );
+    if (sig == EE_SIG) 
+        relays.restoreSettings();
+}
 
 void processCommand()
 {
@@ -126,6 +137,14 @@ void processCommand()
                 getStatus(cmd);
                 break;
 
+            case CmdSaveSettings:
+                saveSettings();
+                break;
+
+            case CmdRestoreSettings:
+                restoreSettings();
+                break;
+
             default:
                 #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
@@ -143,34 +162,10 @@ void processCommand()
     }
 }
 
-static uint32_t mesh_timer = 0;
-static void renewMesh()
-{
-    uint32_t now = millis();
-    if ((now - mesh_timer) > 30000) {
-        mesh_timer  = now;
-        if( ! rf24Mesh.checkConnection() ){
-            //refresh the network address
-            #if DEBUG_CONNECT
-            Serial.println(F("Start reconnect..."));
-            #endif
-            rf24Mesh.renewAddress();
-
-            #if DEBUG_CONNECT
-            Serial.print(F("Connection renewal:"));
-            Serial.println( rf24Mesh.checkConnection() );
-            #endif
-        }  else {
-            #if DEBUG_CONNECT
-            Serial.print(F("Connection good."));
-            #endif
-        }
-    }
-}
 
 // the loop function runs over and over again forever
 void loop() {
-  renewMesh();
+  rf24.update();
 
   processCommand();
 }
