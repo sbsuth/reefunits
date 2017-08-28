@@ -1,12 +1,16 @@
 #ifndef CONTROLLABLE_PUMP_H
 #define CONTROLLABLE_PUMP_H 1
 
+#include <EEPROM.h>
+#include "RF24Interface.h"
+
 class ControllablePump
 {
   public:
-    ControllablePump(   unsigned char ctrlPin, unsigned char swAddr, unsigned char minPct, unsigned confAddr )
+    ControllablePump(   unsigned char ctrlPin, unsigned char swAddr, unsigned char minPct, unsigned confAddr, RF24IPInterface& rf24 )
       : m_pin(ctrlPin), m_swAddr(swAddr), m_minPct(minPct), m_confAddr(confAddr)
-      , m_curSpeed(0), m_newSpeed(0), m_mode(Simple), m_initSpeed(0)
+      , m_curSpeed(0), m_newSpeed(0), m_mode(Simple)
+      , m_rf24(rf24)
     {}
 
     enum Mode {
@@ -15,11 +19,14 @@ class ControllablePump
         Ramp
     };
 
-    void setup() {
+    void setup( bool useSettings ) {
       pinMode( m_pin, OUTPUT );
       analogWrite( m_pin, 0 );
-      readSettings();
-      setSpeed(m_initSpeed);
+      if (useSettings) {
+        restoreSettings();
+      } else {
+        saveSettings();
+      }
     }
 
     // Accepts pct.  Stored as 0-255.
@@ -54,7 +61,7 @@ Serial.print("Turning on switch ");Serial.println(m_swAddr);
             *pc++ = '0' + m_swAddr;
             *pc++ = '\n';
             *pc++ = 0;
-            rf24.sendToRadioClient( 5, cmd, 3 );
+            m_rf24.sendToRadioClient( 5, cmd, 3 );
         }
             
 Serial.print("Setting new speed: "); Serial.println(m_newSpeed);
@@ -63,7 +70,29 @@ Serial.print("Setting new speed: "); Serial.println(m_newSpeed);
         m_curSpeed = m_newSpeed;
     }
 
-    const unsigned ee_size = sizeof(m_mode) + sizeof(m_initSpeed);
+    static unsigned ee_size() {
+        return sizeof(m_mode) + sizeof(m_curSpeed);
+    }
+
+    void restoreSettings() {
+        unsigned addr = m_confAddr;
+
+        EEPROM.get( addr, m_mode );
+        addr += sizeof(m_mode);
+
+        EEPROM.get( addr, m_newSpeed );
+        addr += sizeof(m_newSpeed);
+    }
+
+    void saveSettings() {
+        unsigned addr = m_confAddr;
+
+        EEPROM.put( addr, m_mode );
+        addr += sizeof(m_mode);
+
+        EEPROM.put( addr, m_curSpeed );
+        addr += sizeof(m_curSpeed);
+    }
         
   protected:
     unsigned char m_pin;
@@ -73,6 +102,8 @@ Serial.print("Setting new speed: "); Serial.println(m_newSpeed);
     unsigned char m_curSpeed;
     unsigned char m_newSpeed;
     Mode          m_mode;
+    unsigned char m_initSpeed;
+    RF24IPInterface& m_rf24;
 };
 
 #endif
