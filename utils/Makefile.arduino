@@ -91,9 +91,8 @@
 # built-in libraries
 # EEPROM Ethernet Firmata LiquidCrystal SD Servo SoftwareSerial SPI Stepper Wire
 BUILTINLIB_ENABLED :=  
-#THIRDPARTYLIB_ENABLED +=  utils
-ifeq ($(USE_RF24),1)
 BUILTINLIB_ENABLED +=  SPI EEPROM
+ifeq ($(USE_RF24),1)
 THIRDPARTYLIB_ENABLED +=  RF24  RF24Network RF24Mesh RF24Ethernet ArduinoJson
 endif
 
@@ -138,11 +137,14 @@ MAKEFILE := Makefile
 #PROJ_SOURCE := foo.c bar.cpp BlinkMakefile.cpp
 ifndef PROJ_SOURCE
 PROJ_SOURCE := $(wildcard *.c) $(wildcard *.cpp)
+PROJ_SOURCE += ../utils/Command.cpp
 endif
 
 ###source files for utils
 ifndef UTILS_SOURCE
-UTILS_SOURCE := $(wildcard ../utils/*.cpp)
+ifeq ($(USE_PING),1)
+UTILS_SOURCE:=../utils/DistanceSensor.cpp
+endif
 endif
 
 PROJSRC := $(filter %.c, $(PROJ_SOURCE))
@@ -166,7 +168,7 @@ CORECXXSRC := $(filter %.cpp, $(CORESOURCE))
 BUILTINLIB_DIRS = $(foreach dir, $(BUILTINLIB_ENABLED), $(BUILTINLIB)/$(dir))
 BUILTINLIB_DIRS += $(foreach dir, $(BUILTINLIB_ENABLED), $(shell test -d $(BUILTINLIB)/$(dir)/utility && echo $(BUILTINLIB)/$(dir)/utility))
 BUILTINLIB_DIRS += $(foreach dir, $(BUILTINLIB_ENABLED), $(shell test -d $(BUILTINHWLIB)/$(dir) && echo $(BUILTINHWLIB)/$(dir)))
-BUILTINLIB_DIRS += $(foreach dir, $(BUILTINLIB_ENABLED), $(shell test -d $(BUILTINLIB)/$(dir)/utility && echo $(BUILTINLIB)/$(dir)/utility))
+#BUILTINLIB_DIRS += $(foreach dir, $(BUILTINLIB_ENABLED), $(shell test -d $(BUILTINLIB)/$(dir)/utility && echo $(BUILTINLIB)/$(dir)/utility))
 BUILTINLIB_DIRS += $(patsubst %/.,%,$(wildcard $(foreach dir, $(BUILTINLIB_ENABLED), $(BUILTINLIB)/$(dir)/utility/.)))
 
 BUILTINLIB_SRC = $(foreach path, $(BUILTINLIB_DIRS), $(wildcard $(path)/*.c))
@@ -194,8 +196,17 @@ else
 MYDEFS := -DARDUINO_AVR_UNO
 endif
 MYDEFS += -DARDUINO_ARCH_AVR
+
+ifeq ($(MCU),atmega2560) 
+# Sypport for client connections only for mega
+MYDEFS += -DENABLE_OUTGOING_ETHERNET=1
+endif
+
 CDEFS := -DF_CPU=$(F_CPU) -DARDUINO=$(ARDUINO_VERSION) $(MYDEFS)
 CXXDEFS := -DF_CPU=$(F_CPU) -DARDUINO=$(ARDUINO_VERSION) $(MYDEFS)
+ifeq ($(USE_RF24),1)
+CXXDEFS += -DUSE_RF24=1 -DUSE_JSON=1
+endif
 
 # Place -I options here
 COMMON_INCS =  -I. -I$(CORE) -I../utils
@@ -318,8 +329,9 @@ extcoff: $(PROJECT).elf
 # Define all object files.
 UTILS_OBJ1 = $(UTILS_SOURCE:.cpp=.o)
 UTILS_OBJ = $(join $(addsuffix $(MCU)/,$(dir $(UTILS_OBJ1))),$(notdir $(UTILS_OBJ1)))
+#UTILS_OBJ = $(notdir $(UTILS_OBJ1))
 
-PROJOBJ = $(PROJSRC:.c=.o) $(PROJCXXSRC:.cpp=.o) $(UTILS_OBJ) $(PROJASRC:.S=.o)
+PROJOBJ = $(notdir $(PROJSRC:.c=.o) $(PROJCXXSRC:.cpp=.o)) $(UTILS_OBJ) $(PROJASRC:.S=.o)
 
 COREOBJ1 = $(CORESRC:.c=.o) $(CORECXXSRC:.cpp=.o) $(COREASRC:.S=.o)
 COREOBJ = $(join $(addsuffix $(MCU)/,$(dir $(COREOBJ1))),$(notdir $(COREOBJ1)))
@@ -333,7 +345,7 @@ THIRDPARTYLIB_OBJ = $(join $(addsuffix $(MCU)/,$(dir $(THIRDPARTYLIB_OBJ1))),$(n
 STUFF=a/b.c a/d.c
 
 echox:
-	@echo $(BUILD_DIRS)
+	@echo $(PROJOBJ)
 
 CORE_A = $(CORE)/$(MCU)/core.a
 $(CORE_A): $(COREOBJ)
@@ -365,6 +377,9 @@ $(1)$$(MCU)/%.o: $(1)%.c
 	mkdir -p $(1)/$$(MCU)
 	$$(CC) -c $$(ALL_CFLAGS) $$< -o $$@ 
 endef
+
+%.o: ../utils/%.cpp
+	$(CC) -c $(ALL_CXXFLAGS) $< -o $@
 
 BUILD_DIRS := $(sort $(dir $(BUILTINLIB_OBJ1) $(THIRDPARTYLIB_OBJ1) $(COREOBJ1) $(UTILS_OBJ1) ) )
 
