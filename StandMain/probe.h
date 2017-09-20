@@ -29,6 +29,19 @@ class AtlasProbe
     String& lastValueRead() {
         return m_buf;
     }
+
+    bool sendCalCmd( const char* cmd )
+    {
+        // Send.
+        m_serial.print(cmd);
+        m_serial.print('\r');
+
+        // Get ack.
+        String resp = m_serial.readStringUntil(13);        
+        bool ok = (resp[1] == '*') && (resp[0] == '1') && (resp[2] == 'K');
+
+        return ok;
+    }
   protected:
     HardwareSerial& m_serial;
     String  m_buf;
@@ -52,6 +65,29 @@ class pHProbe : public AtlasProbe
             }
         }
         return changed;
+    }
+
+    bool calStep( int step )
+    {
+        const char* cmd;
+        bool ok = true;
+        switch (step) {
+            case 0:
+                cmd = "Cal,mid,7.0"; 
+                break;
+            case 1:
+                cmd = "Cal,low,4.0"; 
+                break;
+            case 2:
+                cmd = "Cal,high,10.0"; 
+                break;
+            default:
+                ok = false;
+        }
+        if (ok) {
+            ok = sendCalCmd(cmd);
+        }
+        return ok;
     }
 
     float lastValue() {
@@ -90,6 +126,30 @@ class ConductivityProbe : public AtlasProbe
         }
         return changed;
     }
+
+    bool calStep( int step )
+    {
+        const char* cmd;
+        bool ok = true;
+        switch (step) {
+            case 0:
+                cmd = "Cal,dry"; 
+                break;
+            case 1:
+                cmd = "Cal,low,12880"; 
+                break;
+            case 2:
+                cmd = "Cal,high,80000"; 
+                break;
+            default:
+                ok = false;
+        }
+        if (ok) {
+            ok = sendCalCmd(cmd);
+        }
+        return ok;
+    }
+
 
     int lastValue(int i) {
         return m_lastValues[i];
