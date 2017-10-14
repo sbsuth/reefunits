@@ -1,6 +1,9 @@
 #ifndef HEATER_H
 #define HEATER_H
 
+#include <Arduino.h>
+#include "Avg.h"
+
 class TempController
 {
   public:
@@ -19,10 +22,47 @@ class TempController
         return m_heatOn;
     }
 
-    static float adc2R( unsigned adc );
+    float adc2R( unsigned adc );
+    static float k2f( double K ) {
+        return ((K - 273.15)/.5556) + 32;
+    }
+    static float f2k( double F ) {
+        return 273.15 + ((F - 32)*.5556);
+    }
+    float calcTemp( float R, unsigned itherm );
 
-    const float    VREF       = 2.2;
-    const unsigned R_pulldown = 5100;
+    static constexpr float    VREF       = 2.2;
+    static const unsigned R_pulldown = 5100;
+
+    struct CalSession 
+    {
+        CalSession( TempController* tc )
+            : m_tc(tc), m_nspec(0)
+        {}
+        void reset() {
+            m_nspec = 0;
+        }
+        bool addPoint( unsigned adc, float TF ) {
+            if (m_nspec > 2)
+                return false;
+
+            m_R[m_nspec] = m_tc->adc2R(adc);
+            m_TF[m_nspec] = TF;
+
+            m_nspec++;
+            return ready();
+        }
+        bool ready() {
+            return (m_nspec == 3);
+        }
+    
+        TempController* m_tc;
+        unsigned        m_nspec;
+        float           m_R[3];
+        float           m_TF[3];
+    };
+
+    bool setCal( const CalSession& data, unsigned itherm );
 
   protected:
     unsigned char   m_ctrlPin;
@@ -40,9 +80,6 @@ class TempController
     float           m_B[2];      // Cal constant B for each thermistor.
     float           m_C[2];      // Cal constant C for each thermistor.
 
-    bool solve( float R1, float R2, float R3,
-               float T1, float T2, float T3,
-               float& A, float& B, float& C );
 };
 
 #endif
