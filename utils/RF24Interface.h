@@ -70,22 +70,31 @@ class RF24IPInterface
     {
         bool success = false;
         while (tries-- && !success) {
+            #if DEBUG_CONNECT
             Serial.println("Starting connect");
+            #endif
             if (m_outgoing.connect(addr, port)) {
-            Serial.println("Connected");
-            Serial.print("Sending "); Serial.println(cmd);
+                #if DEBUG_CONNECT
+                Serial.println("Connected");
+                Serial.print("Sending "); Serial.println(cmd);
+                #endif
                 m_outgoing.write( cmd, strlen(cmd) );
                 if (m_outgoing.waitAvailable()) {
-            Serial.println("GOt response");
+                    #if DEBUG_CONNECT
+                    Serial.println("GOt response");
+                    #endif
                     m_outgoing.flush();
                     success = true;
                 } else {
-            Serial.println("No response");
+                    #if DEBUG_CONNECT
+                    Serial.println("No response");
+                    #endif
                     success = false;
                 }
             } else {
-
-            Serial.println("Not Connected");
+                #if DEBUG_CONNECT
+                Serial.println("Not Connected");
+                #endif
                 success = false;
             }
             m_outgoing.stop();
