@@ -1,6 +1,6 @@
 #if DEF_CMD_MACROS
 
-#define MAX_ARGS 2
+#define MAX_ARGS 1
 #define MAX_CMD_LEN 6
 
 #else

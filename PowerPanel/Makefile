@@ -14,4 +14,7 @@ serial:
 $(PROJECT).o : $(MCU)/$(PROJECT).o
 Command.o : cmds.h
 
+$(PROJECT).o : $(MCU)/$(PROJECT).o
+Command.o : cmds.h
+
 -include Makefile.d
