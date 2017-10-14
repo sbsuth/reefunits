@@ -8,7 +8,15 @@
 #include "cmds.h"
 #undef DEF_CMD_MACROS
 
+#if MAX_ARGS==1
 #define X(a,b,c,d) a,
+#elif MAX_ARGS==2
+#define X(a,b,c,d,e) a,
+#elif MAX_ARGS==3
+#define X(a,b,c,d,e,f) a,
+#else
+#error "Unsupported MAX_ARGS"
+#endif
 enum CommandKind {
     #include "cmds.h"
 };
@@ -149,6 +157,10 @@ class Command {
     }
     inline void ack();
     inline void ack( JsonObject& json );
+    void ack( bool val );
+    void ack( int val );
+    void ack( float val );
+    void ack( const char* val );
   protected:
     CommandKind m_kind;
     short       m_id;
@@ -208,12 +220,29 @@ struct CommandDescr
 // Define PROGMEM string vars storing command name strings.
 // THese must be separate decls for each one if they're to be part of
 // a progmem array of structs that references them.
+#if MAX_ARGS==1
 #define X(a,b,c,d) const char string_##a[] PROGMEM = b;
+#elif MAX_ARGS==2
+#define X(a,b,c,d,e) const char string_##a[] PROGMEM = b;
+#elif MAX_ARGS==3
+#define X(a,b,c,d,e,f) const char string_##a[] PROGMEM = b;
+#else
+#error "Unsupported MAX_ARGS"
+#endif
 #include "cmds.h"
 #undef X
 
 // Define CommandDescr structs
+#if MAX_ARGS==1
 #define X(a,b,c,d) { a,      string_##a, c, d  },
+#elif MAX_ARGS==2
+#define X(a,b,c,d,e) { a,      string_##a, c, d, e  },
+#elif MAX_ARGS==3
+#define X(a,b,c,d,e,f) { a,      string_##a, c, d, e, f  },
+#else
+#error "Unsupported MAX_ARGS"
+#endif
+
 const CommandDescr PROGMEM g_commandDescrs[] = {
     #include "cmds.h"
 };

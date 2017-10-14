@@ -284,7 +284,7 @@ Command* CommandParser::getCommand( Command* cmd, bool& error )
             int i = 0;
             if ( decodeInt( i ) ) {
                 cmd->arg(m_argNum)->setInt(i);
-                if ( !setExpArg( m_argNum+1,eol,error )) {
+                if ( !setExpArg( ++m_argNum,eol,error )) {
                     reset();
                     return 0;
                 }
@@ -299,7 +299,7 @@ Command* CommandParser::getCommand( Command* cmd, bool& error )
             float f = 0.0;
             if ( decodeFloat( f ) ) {
                 cmd->arg(m_argNum)->setFloat(f);
-                if ( !setExpArg( m_argNum+1,eol,error )) {
+                if ( !setExpArg( ++m_argNum,eol,error )) {
                     reset();
                     return 0;
                 }
@@ -312,7 +312,7 @@ Command* CommandParser::getCommand( Command* cmd, bool& error )
         }
         case ExpStr:
             cmd->arg(m_argNum)->setStr( m_token );
-            if ( !setExpArg( m_argNum+1,eol,error )) {
+            if ( !setExpArg( ++m_argNum,eol,error )) {
                 reset();
                 return 0;
             }
@@ -458,3 +458,47 @@ int main( int argc, char** argv)
 #endif
 
 
+//
+// Utilities to ack simple values in Json wrappers.
+// //
+#if defined(ARDUINO)
+void Command::ack( bool val )
+{
+    #if USE_JSON
+    StaticJsonBuffer<200> jsonBuffer;
+    JsonObject& json = jsonBuffer.createObject();
+    json["value"] = val;
+    ack( json );
+    #endif
+}
+
+void Command::ack( int val )
+{
+    #if USE_JSON
+    StaticJsonBuffer<200> jsonBuffer;
+    JsonObject& json = jsonBuffer.createObject();
+    json["value"] = val;
+    ack( json );
+    #endif
+}
+
+void Command::ack( float val )
+{
+    #if USE_JSON
+    StaticJsonBuffer<200> jsonBuffer;
+    JsonObject& json = jsonBuffer.createObject();
+    json["value"] = val;
+    ack( json );
+    #endif
+}
+
+void Command::ack( const char* val )
+{
+    #if USE_JSON
+    StaticJsonBuffer<200> jsonBuffer;
+    JsonObject& json = jsonBuffer.createObject();
+    json["value"] = val;
+    ack( json );
+    #endif
+}
+#endif
