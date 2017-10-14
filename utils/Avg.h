@@ -1,17 +1,17 @@
 #ifndef AVG_H
 #define AVG_H
 
-template <int N>
+template <int N, typename T=short>
 class Avg {
   public:
-    Avg( short center=0 ) 
+    Avg( T center=0 ) 
        : m_avg(center)
     {
        for ( int i=0; i < N; i++ )
          m_vals[i] = center;
     }
 
-    short update( short newVal ) {
+    T update( T newVal ) {
         int sum = newVal;
         m_vals[N-1] = sum;
         for ( int i=0; i < (N-1); i++ ) {
@@ -21,17 +21,17 @@ class Avg {
         m_avg = sum/N;
         return avg();
     }
-    short avg() const {
+    T avg() const {
         return m_avg;
     }
-    short m_avg;
-    short m_vals[N];
+    T m_avg;
+    T m_vals[N];
 };
 
-template <int N>
-class AvgThresh : public Avg<N> {
+template <int N, typename T>
+class AvgThresh : public Avg<N,T> {
   public:
-    AvgThresh( short center, short lowThresh, short highThresh )
+    AvgThresh( T center, T lowThresh, T highThresh )
       : Avg<N>( center ), m_lowThresh(lowThresh), m_highThresh(highThresh) {
 
         // Set limits at 8X the distance from center.
@@ -48,17 +48,17 @@ class AvgThresh : public Avg<N> {
     bool isInRange() {
       return (!isLow() && !isHigh());
     }
-    short update( short newVal ) {
+    T update( T newVal ) {
         // Ignore anything outside limits
         if ((newVal < m_lowLimit) || (newVal > m_highLimit))
             return Avg<N>::avg();
         else
             return Avg<N>::update(newVal);
     }
-    short m_lowLimit;
-    short m_highLimit;
-    short m_lowThresh;
-    short m_highThresh;
+    T m_lowLimit;
+    T m_highLimit;
+    T m_lowThresh;
+    T m_highThresh;
 };
 
 
