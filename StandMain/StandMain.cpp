@@ -232,7 +232,6 @@ void processCommand()
                 break;
             }
             case CmdSetMode: {
-                Serial.println("Got set mode");
                 int ipump = cmd->ID();
                 if ((ipump >= NPUMPS) || (ipump < 0))
                     break;
@@ -240,11 +239,9 @@ void processCommand()
                 cmd->arg(0)->getInt(mode);
                 cmd->arg(1)->getInt(holdSec);
                 cmd->arg(2)->getInt(rampSec);
-                Serial.print("mode=");Serial.print(mode);Serial.print(", holdSec=");Serial.print(holdSec);Serial.print(", ramp=");Serial.println(rampSec);
                 if ((mode < 0) || (mode >= ControllablePump::NumModes))
                     break;
 
-                Serial.println("Setting");
                 pumps[ipump]->setMode( (ControllablePump::Mode)mode, holdSec, rampSec );
                     
                 break;
