@@ -111,16 +111,20 @@ FORMAT := ihex
 ifeq ($(UPLOAD_RATE),)
 UPLOAD_RATE := 115200
 endif
-#PORT := /dev/tty.usbserial*
-ifeq ($(PORT),)
-PORT := \\.\COM3
-endif
 
 HOME := c:/cygwin64/home/sbs
 #the topmost path to the arduino software
-INSTALL_PATH := ${HOME}/Arduino
-#path to arduino core source files and header files
+ifeq ($(PLATFORM),linux)
+INSTALL_PATH := /opt/arduino-1.8.5
 CORE := $(INSTALL_PATH)/hardware/arduino/avr/cores/arduino
+PORT := /dev/tty.usbserial*
+else
+INSTALL_PATH := ${HOME}/Arduino
+CORE := $(INSTALL_PATH)/hardware/arduino/avr/cores/arduino
+ifeq ($(PORT),)
+PORT := \\.\COM3
+endif
+endif
 #path to arduino built-in libraries
 BUILTINLIB := $(INSTALL_PATH)/libraries
 BUILTINHWLIB := $(INSTALL_PATH)/hardware/arduino/avr/libraries
@@ -167,6 +171,7 @@ CORECXXSRC := $(filter %.cpp, $(CORESOURCE))
 #
 BUILTINLIB_DIRS = $(foreach dir, $(BUILTINLIB_ENABLED), $(BUILTINLIB)/$(dir))
 BUILTINLIB_DIRS += $(foreach dir, $(BUILTINLIB_ENABLED), $(shell test -d $(BUILTINLIB)/$(dir)/utility && echo $(BUILTINLIB)/$(dir)/utility))
+BUILTINLIB_DIRS += $(foreach dir, $(BUILTINLIB_ENABLED), $(shell test -d $(BUILTINHWLIB)/$(dir)/src && echo $(BUILTINHWLIB)/$(dir)/src))
 BUILTINLIB_DIRS += $(foreach dir, $(BUILTINLIB_ENABLED), $(shell test -d $(BUILTINHWLIB)/$(dir) && echo $(BUILTINHWLIB)/$(dir)))
 #BUILTINLIB_DIRS += $(foreach dir, $(BUILTINLIB_ENABLED), $(shell test -d $(BUILTINLIB)/$(dir)/utility && echo $(BUILTINLIB)/$(dir)/utility))
 BUILTINLIB_DIRS += $(patsubst %/.,%,$(wildcard $(foreach dir, $(BUILTINLIB_ENABLED), $(BUILTINLIB)/$(dir)/utility/.)))
@@ -333,6 +338,9 @@ UTILS_OBJ = $(join $(addsuffix $(MCU)/,$(dir $(UTILS_OBJ1))),$(notdir $(UTILS_OB
 
 PROJOBJ = $(notdir $(PROJSRC:.c=.o) $(PROJCXXSRC:.cpp=.o)) $(UTILS_OBJ) $(PROJASRC:.S=.o)
 
+echoy:
+	echo $(PROJOBJ)
+
 COREOBJ1 = $(CORESRC:.c=.o) $(CORECXXSRC:.cpp=.o) $(COREASRC:.S=.o)
 COREOBJ = $(join $(addsuffix $(MCU)/,$(dir $(COREOBJ1))),$(notdir $(COREOBJ1)))
 
@@ -345,7 +353,7 @@ THIRDPARTYLIB_OBJ = $(join $(addsuffix $(MCU)/,$(dir $(THIRDPARTYLIB_OBJ1))),$(n
 STUFF=a/b.c a/d.c
 
 echox:
-	@echo $(PROJOBJ)
+	@echo $(CORE)
 
 CORE_A = $(CORE)/$(MCU)/core.a
 $(CORE_A): $(COREOBJ)
@@ -389,7 +397,10 @@ $(foreach bdir,$(BUILD_DIRS),$(eval $(call compile_c,$(bdir))))
 
 
 # Compile: create object files from C++ source files.
-%.o : %.cpp
+%.o: %.cpp
+	$(CXX) -c $(ALL_CXXFLAGS) $< -o $@ 
+
+$(MCU)/%.o: %.cpp
 	$(CXX) -c $(ALL_CXXFLAGS) $< -o $@ 
 
 # Compile: create object files from C source files.
@@ -403,7 +414,6 @@ $(foreach bdir,$(BUILD_DIRS),$(eval $(call compile_c,$(bdir))))
 # Assemble: create object files from assembler source files.
 %.o : %.S
 	$(CC) -c $(ALL_ASFLAGS) $< -o $@
-
 
 # Target: clean project.
 clean: mostlyclean
