@@ -381,6 +381,9 @@ endef
 %.o: ../utils/%.cpp
 	$(CC) -c $(ALL_CXXFLAGS) $< -o $@
 
+$(MCU)/%.o: ../utils/%.cpp
+	$(CC) -c $(ALL_CXXFLAGS) $< -o $@
+
 BUILD_DIRS := $(sort $(dir $(BUILTINLIB_OBJ1) $(THIRDPARTYLIB_OBJ1) $(COREOBJ1) $(UTILS_OBJ1) ) )
 
 $(foreach bdir,$(BUILD_DIRS),$(eval $(call compile_cpp,$(bdir))))
