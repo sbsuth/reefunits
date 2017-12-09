@@ -164,6 +164,7 @@ class ControllablePump
         addr += sizeof(m_holdSec);
 
         EEPROM.put( addr, m_rampSec );
+Serial.print("Pumpt write to addr ");Serial.println(addr);
         addr += sizeof(m_rampSec);
     }
         

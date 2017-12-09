@@ -12,13 +12,13 @@ class Avg {
     }
 
     T update( T newVal ) {
-        int sum = newVal;
-        m_vals[N-1] = sum;
+        T sum = newVal;
         for ( int i=0; i < (N-1); i++ ) {
           m_vals[i] = m_vals[i+1];
           sum += m_vals[i];
         }
-        m_avg = sum/N;
+        m_vals[N-1] = newVal;
+        m_avg = sum/T(N);
         return avg();
     }
     T avg() const {

@@ -2,9 +2,27 @@
 #include <EEPROM.h>
 #include <math.h>
 
+
 TempController::TempController(   int ctrlPin, int temp1Pin, int temp2Pin, unsigned confAddr )
-        : m_ctrlPin(ctrlPin), m_temp1Pin(temp1Pin), m_temp2Pin(temp2Pin), m_confAddr(confAddr), m_setTemp(0), m_heatOn(false)
-    {}
+        : m_ctrlPin(ctrlPin), m_confAddr(confAddr)
+        , m_setTemp(0), m_heatOn(false), m_lastOnOff(millis()),
+        m_lastSampleTime(0), m_lastSampledProbe(0)
+{
+    m_cal[0].setTC(this);
+    m_cal[1].setTC(this);
+    m_tempPin[1] = temp2Pin;
+    m_tempPin[0] = temp1Pin;
+    m_tempPin[1] = temp2Pin;
+
+    // Defaults for EEPROM values.  Should be overwritten except for first clean exec.
+    m_setTemp = 79;
+    m_samplePeriod = 500;
+    m_sensitivity = 0.25;
+    m_VCC = 4.85;
+    m_A[0] = m_A[1] = 0.0;
+    m_B[0] = m_B[1] = 0.0;
+    m_C[0] = m_C[1] = 0.0;
+}
 
 void TempController::setup( bool useSettings )
 {
@@ -13,11 +31,15 @@ void TempController::setup( bool useSettings )
     } else {
         saveSettings();
     }
+
+    m_heatOn = false;
+    m_lastOnOff = millis();
+
     pinMode( m_ctrlPin, OUTPUT );
     digitalWrite( m_ctrlPin, 0 );
 
-    pinMode( m_temp1Pin, INPUT );
-    pinMode( m_temp2Pin, INPUT );
+    pinMode( m_tempPin[0], INPUT );
+    pinMode( m_tempPin[1], INPUT );
 
     // The analog reference is global, so this is only valid if there are no other units doing analogRead().
     analogReference( INTERNAL2V56 );
@@ -25,11 +47,65 @@ void TempController::setup( bool useSettings )
 
 bool TempController::update()
 {
+    // Sample temp on one sensor every m_samplePeriod ms.
+    unsigned long curTime = millis();
+    if ((curTime - m_lastSampleTime) > m_samplePeriod) {
+        m_lastSampledProbe = (m_lastSampledProbe ? 0 : 1);
+        m_lastSampleTime = curTime;
+        if (isCalibrated(m_lastSampledProbe)) {
+            unsigned adc = analogRead( pinFor(m_lastSampledProbe) );
+            float R = adc2R(adc);
+            float TF = calcTemp( R, m_lastSampledProbe );
+            #if DEBUG_TEMP
+            Serial.print("TEMP: adc=");Serial.print(adc);
+            Serial.print(", R=");Serial.print(R);
+            Serial.print(", TF=");Serial.print(TF);
+            Serial.println("");
+            #endif
+            m_tempValue[m_lastSampledProbe].update(TF);
+
+            // Set heater on/off based on current temps.
+            calcOnOff();
+        }
+    }
+    
+    // Push heat on.
     digitalWrite( m_ctrlPin, m_heatOn ? HIGH : LOW );
+
+}
+
+unsigned long TempController::timeSinceLastOnOff() {
+    return (millis() - m_lastOnOff);
+}
+
+bool TempController::isCalibrated( int itherm ) {
+    if ((itherm >= 0) && (itherm < 2)) {
+        return m_A[itherm] != 0.0 && m_B[itherm] != 0.0 && m_C[itherm] != 0.0;
+    } else {
+        return isCalibrated(0) && isCalibrated(1);
+    }
+}
+
+// Turns the header off if the ave temp is > m_thresh above set temp
+// off if below.
+void TempController::calcOnOff()
+{
+    if (!isCalibrated())
+        return;
+
+    float ave = curTemp();
+    float diff = (ave - m_setTemp);
+    if (diff > m_sensitivity) {
+        setHeaterOn(false);
+    } else if (diff < -m_sensitivity) {
+        setHeaterOn(true);
+    }
 }
 
 unsigned TempController::ee_size() {
     return sizeof(m_setTemp)
+        + sizeof(m_samplePeriod)
+        + sizeof(m_sensitivity)
         + sizeof(m_VCC)
         + sizeof(m_A)
         + sizeof(m_B)
@@ -40,6 +116,12 @@ void TempController::restoreSettings() {
 
     EEPROM.get( addr, m_setTemp );
     addr += sizeof(m_setTemp);
+
+    EEPROM.get( addr, m_samplePeriod );
+    addr += sizeof(m_samplePeriod);
+
+    EEPROM.get( addr, m_sensitivity );
+    addr += sizeof(m_sensitivity);
 
     EEPROM.get( addr, m_VCC );
     addr += sizeof(m_VCC);
@@ -69,6 +151,12 @@ void TempController::saveSettings() {
     EEPROM.put( addr, m_setTemp );
     addr += sizeof(m_setTemp);
 
+    EEPROM.put( addr, m_samplePeriod );
+    addr += sizeof(m_samplePeriod);
+
+    EEPROM.put( addr, m_sensitivity );
+    addr += sizeof(m_sensitivity);
+
     EEPROM.put( addr, m_VCC );
     addr += sizeof(m_VCC);
 
@@ -94,9 +182,29 @@ void TempController::saveSettings() {
 // Convert an ADC reading to a thermistor resistance based
 // a fixed 5.1k pulldown resistor value, a fixed 2.2V reference,
 // and a VCC that can be calibrated.
+// 
+//  VCC --- R_therm --- ADC --- R_pulldown --- GND
+//  
 float TempController::adc2R( unsigned adc ) {
     float V = (adc * VREF)/1024;
     return (R_pulldown * (m_VCC - V))/V;
+}
+
+// Adds a calibration point given a step and an externally measure temp.
+// Measures the current ADC reading to go with it.
+// If step is 0, resets.
+// Otherwise, if step is not the next expected step, returns false.
+// If step is 2, sets the calibration.
+bool TempController::calStep( unsigned step, unsigned itherm, float TF )
+{
+    if (step == 0) {
+        m_cal[itherm].reset();
+    } else if (step != m_cal[itherm].nextStep()) {
+        return false;
+    }
+    unsigned adc = analogRead( pinFor(itherm) );
+    if (m_cal[itherm].addPoint( adc, TF ))
+        return setCal( m_cal[itherm], itherm );
 }
 
 // Given thermistor 3 resistance values, 3 temperatures measured externally at
@@ -130,6 +238,10 @@ bool TempController::setCal(    const CalSession& data, unsigned itherm )
         B = ((iT0-iT1) - (C * (lR0_3-lR1_3))) / (lR0-lR1);
         A = iT0 - C*lR0_3 - B*lR0;
 
+        #if DEBUG_TEMP
+        Serial.print("TEMP: Finish cal for probe ");Serial.print(itherm);Serial.print(", A=");Serial.print(A);Serial.print(",B=");Serial.print(B);Serial.print(", C=");Serial.println(C);
+        #endif
+
         saveSettings();
 
         return true;
@@ -137,6 +249,9 @@ bool TempController::setCal(    const CalSession& data, unsigned itherm )
         A = 0;
         B = 0;
         C = 0;
+        #if DEBUG_TEMP
+        Serial.print("TEMP: Finish cal for probe: failed: bad input");
+        #endif
         return false;
     }
 }

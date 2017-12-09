@@ -13,8 +13,13 @@ class AtlasProbe
         m_serial.begin(9600);
         m_buf.reserve(30);                            
 
-        // Explicitly set to continuous reading mode.
+        // set to continuous reading mode.
         m_serial.print("C,1");
+        m_serial.print('\r');
+
+
+        // Turn off LED
+        m_serial.print("L,0");
         m_serial.print('\r');
     }
 

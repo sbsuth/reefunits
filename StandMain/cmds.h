@@ -14,7 +14,9 @@ X(  CmdRestoreSettings, "rset", false,  CmdArgNone, CmdArgNone, CmdArgNone )
 X(  CmdSetMode,         "mset", true,   CmdArgInt,  CmdArgInt, CmdArgInt )
 X(  CmdCalEC,           "cale", false,  CmdArgInt,  CmdArgNone, CmdArgNone )
 X(  CmdCalPH,           "calp", false,  CmdArgInt,  CmdArgNone, CmdArgNone )
-X(  CmdHeat,           "heat", false,  CmdArgInt,  CmdArgNone, CmdArgNone )
+X(  CmdHeat,            "heat", false,  CmdArgInt,  CmdArgNone, CmdArgNone )
+X(  CmdSetTargetTemp,   "stt",  false,  CmdArgFloat,CmdArgInt,  CmdArgFloat )
+X(  CmdCalTemp,         "calt", true,   CmdArgInt,  CmdArgFloat, CmdArgNone )
 X(  CmdNone,            "nop",  false,  CmdArgNone, CmdArgNone, CmdArgNone )
 
 #endif

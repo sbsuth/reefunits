@@ -28,7 +28,7 @@
 
 // Debug prints.
 #define DEBUG_STARTUP 1
-#define DEBUG_CHANGES 1
+#define DEBUG_CHANGES 0
 #define DEBUG_CMD 1
 #define DEBUG_CONNECT 1
 
@@ -49,12 +49,12 @@ Switch floatSwitch( FLOAT_SW, LOW );
 
 #define NPUMPS 4
 
-#define EE_SIG              123
+#define EE_SIG              126
 #define SIG_EE_ADDR         0
 #define SIG_EE_SIZE         sizeof(unsigned char)
 
 #define PUMP_EE_ADDR        SIG_EE_ADDR + SIG_EE_SIZE
-#define PUMP_EE_ADDR_I(i)   (PUMP_EE_ADDR + (i * PUMP_EE_SIZE))
+#define PUMP_EE_ADDR_I(i)   (PUMP_EE_ADDR + (i * ControllablePump::ee_size()))
 #define PUMP_EE_SIZE        (NPUMPS*ControllablePump::ee_size())
 
 #define T_CTRL_EE_ADDR      PUMP_EE_ADDR + PUMP_EE_SIZE
@@ -84,7 +84,7 @@ void setup() {
     #if DEBUG_STARTUP
     Serial.println(F("Start"));
     #endif
-
+    
     // Check for current signature to determine if settings should be reset.
     unsigned char sig = 0;
     EEPROM.get( SIG_EE_ADDR, sig );
@@ -120,7 +120,7 @@ static Command rf24Cmd;
 
 static void getStatus( Command* cmd )
 {
-    StaticJsonBuffer<200> jsonBuffer;
+    StaticJsonBuffer<330> jsonBuffer;
 
     JsonObject& json = jsonBuffer.createObject();
     json["pH"] = pH_probe.lastValue();
@@ -131,6 +131,16 @@ static void getStatus( Command* cmd )
     json["sump_sw"] = floatSwitch.isOn();
     json["sump_lev"] = distanceSensor.lastSample();
     json["heat"] = tempController.heaterIsOn();
+    json["theat"] = tempController.timeSinceLastOnOff(); // Dividing by 1000 fails.  Blows stack?
+    float t = tempController.curTemp(0);
+    json["temp0"] = isnan(t) ? 0.0 : t;
+    t = tempController.curTemp(1);
+    json["temp1"] = isnan(t) ? 0.0 : t;
+    json["cal0"] = tempController.isCalibrated(0);
+    json["cal1"] = tempController.isCalibrated(1);
+    json["tset"] = tempController.getSetTemp();
+    json["tper"] = tempController.getSamplePeriod();
+    json["tsens"] = tempController.getSensitivity();
     cmd->ack( json );
    /*
     https://bblanchon.github.io/ArduinoJson/assistant/
@@ -142,9 +152,17 @@ static void getStatus( Command* cmd )
      "TDS": 10,
      "sump_sw": true,
      "sump_lev": 1.23,
-     "heat": true
+     "heat": true,
+     "theat": 1000,
+     "temp0": 1.23,
+     "temp1": 1.23,
+     "cal0": true,
+     "cal1": true,
+     "tset": 1.23,
+     "tper": 10000,
+     "tsens": 1.23
    }
-    135
+    320
    */
 }
 
@@ -165,12 +183,17 @@ void doSwitch( int sw, bool onOff )
 
 static void saveSettings()
 {
+    tempController.saveSettings();
+
     for ( int ipump=0; ipump < NPUMPS; ipump++ )
         pumps[ipump]->saveSettings();
+
 }
 
 static void restoreSettings()
 {
+    tempController.saveSettings();
+
     for ( int ipump=0; ipump < NPUMPS; ipump++ )
         pumps[ipump]->restoreSettings();
 }
@@ -264,6 +287,26 @@ void processCommand()
                 tempController.setHeaterOn( onOff != 0 );
                 break;
             }
+            case CmdSetTargetTemp: {
+                float TF;
+                int sample;
+                float sense;
+                cmd->arg(0)->getFloat(TF);
+                cmd->arg(1)->getInt(sample);
+                cmd->arg(2)->getFloat(sense);
+                if (TF > 0.0) tempController.setSetTemp(TF);
+                if (sample > 0) tempController.setSamplePeriod(sample);
+                if (sense > 0.0) tempController.setSensitivity(sense);
+                break;
+            }
+            case CmdCalTemp: {
+                int step = -1;
+                float TF;
+                cmd->arg(0)->getInt(step);
+                cmd->arg(1)->getFloat(TF);
+                cmd->ack( tempController.calStep( step, cmd->ID(), TF ) );
+                break;
+            }
             default:
                 #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
@@ -286,7 +329,6 @@ static uint32_t mesh_timer = 0;
 
 // the loop function runs over and over again forever
 void loop() {
-
   rf24.update();
 
   unsigned short dist = 0;
