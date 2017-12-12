@@ -96,6 +96,7 @@ class RF24IPInterface
                 Serial.println("Not Connected");
                 #endif
                 success = false;
+                delay(100);
             }
             m_outgoing.stop();
         }
