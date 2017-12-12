@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "Avg.h"
 
-#define DEBUG_TEMP 1
+#define DEBUG_TEMP 0
 
 class TempController
 {
