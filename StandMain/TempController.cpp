@@ -19,9 +19,14 @@ TempController::TempController(   int ctrlPin, int temp1Pin, int temp2Pin, unsig
     m_samplePeriod = 500;
     m_sensitivity = 0.25;
     m_VCC = 4.85;
-    m_A[0] = m_A[1] = 0.0;
-    m_B[0] = m_B[1] = 0.0;
-    m_C[0] = m_C[1] = 0.0;
+    
+    // Taken from an initial calibration.  But they don't seem right, so update on next cal.
+    m_A[0] = 0.00771;
+    m_B[0] = -0.0083;
+    m_C[0] = 0.00000;
+    m_A[1] = 0.01187;
+    m_B[1] = -0.00149;
+    m_C[1] = 0.00001;
 }
 
 void TempController::setup( bool useSettings )
@@ -31,7 +36,6 @@ void TempController::setup( bool useSettings )
     } else {
         saveSettings();
     }
-
     m_heatOn = false;
     m_lastOnOff = millis();
 
