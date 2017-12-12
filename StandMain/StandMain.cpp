@@ -1,6 +1,15 @@
 /*
  */
 
+// Debug prints.
+#define DEBUG_STARTUP 1
+#define DEBUG_CHANGES 0
+#define DEBUG_CMD 1
+#define DEBUG_CONNECT 0
+#define DEBUG_PUMP 1
+
+
+
 #include <Arduino.h>
 #include "Switch.h"
 #include "Avg.h"
@@ -26,12 +35,6 @@
 #define FLOAT_SW         37
 
 
-// Debug prints.
-#define DEBUG_STARTUP 1
-#define DEBUG_CHANGES 0
-#define DEBUG_CMD 1
-#define DEBUG_CONNECT 1
-
 
 
 // Network objects
@@ -49,7 +52,7 @@ Switch floatSwitch( FLOAT_SW, LOW );
 
 #define NPUMPS 4
 
-#define EE_SIG              126
+#define EE_SIG              128
 #define SIG_EE_ADDR         0
 #define SIG_EE_SIZE         sizeof(unsigned char)
 
@@ -61,10 +64,11 @@ Switch floatSwitch( FLOAT_SW, LOW );
 #define T_CTRL_EE_SIZE      TempController::ee_size()
 
 
-ControllablePump mainCirc( 5, 2, 20, PUMP_EE_ADDR_I(0), rf24 );
-ControllablePump skimmer(  4, 3, 20, PUMP_EE_ADDR_I(1), rf24 );
-ControllablePump ph1(      6, 0, 0,  PUMP_EE_ADDR_I(2), rf24 );
-ControllablePump ph2(      7, 1, 0,  PUMP_EE_ADDR_I(3), rf24 );
+                        // PIN, SWITCH, MINPCT
+ControllablePump mainCirc( 5,   2,      20, PUMP_EE_ADDR_I(0), rf24 );
+ControllablePump skimmer(  4,   3,      20, PUMP_EE_ADDR_I(1), rf24 );
+ControllablePump ph1(      6,   0,      0,  PUMP_EE_ADDR_I(2), rf24 );
+ControllablePump ph2(      7,   1,      0,  PUMP_EE_ADDR_I(3), rf24 );
 
 ControllablePump* pumps[NPUMPS] = {&mainCirc,  &skimmer, &ph1, &ph2 };
 
@@ -166,6 +170,34 @@ static void getStatus( Command* cmd )
    */
 }
 
+static void getPumpStatus( Command* cmd )
+{
+    StaticJsonBuffer<830> jsonBuffer;
+
+    JsonArray& array = jsonBuffer.createArray();
+    for (int ipump=0; ipump < 4; ipump++ ) {
+        ControllablePump* pump = pumps[ipump];
+        JsonObject& jpump = array.createNestedObject();
+        jpump["on"] = (pump->getCurSpeed() > 0) ? true : false;
+        jpump["mode"] = (int)pump->getMode();
+        jpump["cur_speed"] = pump->getCurSpeed();
+        jpump["top_speed"] = pump->getTopSpeed();
+        jpump["ramp_sec"] = pump->getRampSec();
+        jpump["hold_sec"] = pump->getHoldSec();
+        jpump["ramp_range"] = pump->getRampRange();
+        jpump["hold_range"] = pump->getHoldRange();
+        jpump["last_change"] = pump->getLastChangeTime();
+    }
+    cmd->ack(array);
+
+   /*
+    https://bblanchon.github.io/ArduinoJson/assistant/
+    {"on":false,"mode":1,"cur_speed":0,"top_speed":0,"ramp_sec":1,"hold_sec":10,"ramp_range":0,"hold_range":0,"last_change":0}
+    Copied into an array of 4 of these: 824
+   */
+}
+
+
 void doSwitch( int sw, bool onOff )
 {
     char buf[8];
@@ -224,6 +256,10 @@ void processCommand()
                 getStatus(cmd);
                 break;
 
+            case CmdPumpStatus:
+                getPumpStatus(cmd);
+                break;
+
             case CmdSaveSettings:
                 saveSettings();
                 break;
@@ -254,19 +290,34 @@ void processCommand()
                 pumps[ipump]->setTopSpeed( pct ); 
                 break;
             }
-            case CmdSetMode: {
+            case CmdTempShutdown: {
+                int ipump = cmd->ID(); // -1 if all pumps.
+                if (ipump >= NPUMPS) 
+                    break;
+                int secs;
+                cmd->arg(0)->getInt(secs);
+                for (int i=0; i < NPUMPS; i++) {
+                    if ((ipump < 0) || (ipump == i)) {
+                        if (secs > 0) 
+                            pumps[i]->setTempShutoffInterval( secs ); 
+                        else
+                            pumps[i]->cancelTempShutoff();
+                    }
+                }
+                break;
+            }
+            case CmdPumpMode: {
                 int ipump = cmd->ID();
                 if ((ipump >= NPUMPS) || (ipump < 0))
                     break;
-                int mode=0, holdSec=0, rampSec=0;
+                int mode=0;
+                float holdArg, rampArg;
                 cmd->arg(0)->getInt(mode);
-                cmd->arg(1)->getInt(holdSec);
-                cmd->arg(2)->getInt(rampSec);
+                cmd->arg(1)->getFloat(holdArg);
+                cmd->arg(2)->getFloat(rampArg);
                 if ((mode < 0) || (mode >= ControllablePump::NumModes))
                     break;
-
-                pumps[ipump]->setMode( (ControllablePump::Mode)mode, holdSec, rampSec );
-                    
+                pumps[ipump]->setMode( (ControllablePump::Mode)mode, holdArg, rampArg );
                 break;
             }
             case CmdCalEC: {
