@@ -157,6 +157,7 @@ class Command {
     }
     inline void ack();
     inline void ack( JsonObject& json );
+    inline void ack( JsonArray& json );
     void ack( bool val );
     void ack( int val );
     void ack( float val );
@@ -275,6 +276,9 @@ class InStream
     virtual void ack( Command* cmd, JsonObject& json ) {
         ack(cmd);
     }
+    virtual void ack( Command* cmd, JsonArray& json ) {
+        ack(cmd);
+    }
     virtual void pingActivity() {}
 };
 
@@ -317,6 +321,7 @@ class ArduinoSerialIO : public InStream
         return true;
     }
     virtual void ack( Command* cmd, JsonObject& json );
+    virtual void ack( Command* cmd, JsonArray& json );
 };
 #endif
 
@@ -366,6 +371,7 @@ class EthernetSerialIO : public InStream
     }
     virtual void ack( Command* cmd );
     virtual void ack( Command* cmd, JsonObject& json );
+    virtual void ack( Command* cmd, JsonArray& json );
 
     EthernetClient& client() {
         return m_client;
@@ -455,6 +461,11 @@ inline void Command::ack()
 }
 
 inline void Command::ack( JsonObject& json )
+{
+    parser()->stream()->ack(this,json);
+}
+
+inline void Command::ack( JsonArray& json )
 {
     parser()->stream()->ack(this,json);
 }

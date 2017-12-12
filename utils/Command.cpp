@@ -385,10 +385,28 @@ void EthernetSerialIO::ack( Command* cmd, JsonObject& json )
     json.printTo(this->client());
     pingActivity();
 }
+void EthernetSerialIO::ack( Command* cmd, JsonArray& json )
+{
+    write_pgm(json_resp_header);
+    client().print( json.measureLength() );
+    client().print( "\r\n\r\n" );
+    #if DEBUG_ACK
+    Serial.print(F("Send ack for cmd #")); Serial.println((int)cmd->kind());
+    #endif
+    json.printTo(this->client());
+    pingActivity();
+}
 #endif
 
 #if defined(ARDUINO)
 void ArduinoSerialIO::ack( Command* cmd, JsonObject& json )
+{
+    #if USE_JSON
+    json.printTo(Serial);
+    Serial.println("");
+    #endif
+}
+void ArduinoSerialIO::ack( Command* cmd, JsonArray& json )
 {
     #if USE_JSON
     json.printTo(Serial);
