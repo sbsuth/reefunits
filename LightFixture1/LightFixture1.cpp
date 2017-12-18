@@ -322,10 +322,12 @@ void processCommand()
             cmd->ack();
         }
         cmd->parser()->reset();
+        cmd->disconnect();
     } else if (error) {
         #if DEBUG_CMD
         Serial.println(F("Error in command\n"));
         #endif
+        cmd->disconnect();
     }
 }
 
