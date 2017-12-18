@@ -158,6 +158,7 @@ class Command {
     inline void ack();
     inline void ack( JsonObject& json );
     inline void ack( JsonArray& json );
+    inline void disconnect( boolean unnatural=false );
     void ack( bool val );
     void ack( int val );
     void ack( float val );
@@ -280,6 +281,7 @@ class InStream
         ack(cmd);
     }
     virtual void pingActivity() {}
+    virtual void disconnect( boolean unnatural=false ) {}
 };
 
 #if USE_STDIO
@@ -331,8 +333,7 @@ class RF24SerialIO : public InStream
   public:
     RF24SerialIO( RF24Network* network )
 		: m_network(network)
-    {
-    }
+    {}
     bool read( char* c ) {
 		if (m_network->available()) {
 			m_network->read( m_header, c, 1 );
@@ -372,12 +373,15 @@ class EthernetSerialIO : public InStream
     virtual void ack( Command* cmd );
     virtual void ack( Command* cmd, JsonObject& json );
     virtual void ack( Command* cmd, JsonArray& json );
+    virtual void disconnect( bool unnatural=false );
 
     EthernetClient& client() {
         return m_client;
     }
     virtual void pingActivity();
         
+    // Time after which we drop connections that have seen no activity.
+    static const unsigned long m_connectionTimeout = 5000;
   protected:
     RF24IPInterface* m_interface;
     EthernetClient m_client; // Make it simple to get client from last command.
@@ -468,6 +472,11 @@ inline void Command::ack( JsonObject& json )
 inline void Command::ack( JsonArray& json )
 {
     parser()->stream()->ack(this,json);
+}
+
+inline void Command::disconnect( bool unnatural )
+{
+    parser()->stream()->disconnect(unnatural);
 }
 
 

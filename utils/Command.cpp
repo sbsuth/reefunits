@@ -357,6 +357,10 @@ bool EthernetSerialIO::read( char* c ) {
         first = false;
         pingActivity();
         return true;
+    } else if ( m_client && m_client.connected() && ((millis() - m_interface->lastHeartbeat()) > m_connectionTimeout)) {
+        // If connected with no activity past a timeout, disconnect.
+        disconnect(true);
+        return false;
     } else {
         return false;
     }
@@ -371,6 +375,7 @@ void EthernetSerialIO::ack( Command* cmd )
     #if DEBUG_ACK
     Serial.print(F("Send empty ack for cmd #")); Serial.println((int)cmd->kind());
     #endif
+    disconnect(false);
     pingActivity();
 }
 
@@ -383,6 +388,7 @@ void EthernetSerialIO::ack( Command* cmd, JsonObject& json )
     Serial.print(F("Send ack for cmd #")); Serial.println((int)cmd->kind());
     #endif
     json.printTo(this->client());
+    disconnect(false);
     pingActivity();
 }
 void EthernetSerialIO::ack( Command* cmd, JsonArray& json )
@@ -394,8 +400,16 @@ void EthernetSerialIO::ack( Command* cmd, JsonArray& json )
     Serial.print(F("Send ack for cmd #")); Serial.println((int)cmd->kind());
     #endif
     json.printTo(this->client());
+    disconnect(false);
     pingActivity();
 }
+
+void EthernetSerialIO::disconnect( bool unnatural )
+{
+    m_client.stop();
+    m_interface->logDisconnect( unnatural );
+}
+
 #endif
 
 #if defined(ARDUINO)
