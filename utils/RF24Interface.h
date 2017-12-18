@@ -21,6 +21,7 @@ class RF24IPInterface
         , m_ip( 10, 10, 2, addr )
         , m_server(1000)
         , m_heartbeat(0)
+        , m_unnatural(0)
     {}
 
     void init() {
@@ -34,12 +35,26 @@ class RF24IPInterface
     void pingHeartbeat() {
         m_heartbeat = millis();
     }
+    unsigned long lastHeartbeat() {
+        return m_heartbeat;
+    }
 
 
-    const unsigned long m_timeout = (2 * 60000);
+    // Check mesh connection this often.
+    const unsigned long m_timeout = (1 * 60000);
 
     void update() {
-        uint32_t now = millis();
+        // If we've seen a large number of unnatural disconnects, re-init.
+        if (m_unnatural > m_maxUnnatural) {
+            #if 0 
+            // This isn't working well..
+            init();
+            m_unnatural = 0;
+            #endif
+            delay(100);
+            return;
+        }
+        unsigned long now = millis();
         if ((now - m_heartbeat) > m_timeout) {
             m_heartbeat  = now;
             if( ! m_mesh.checkConnection() ){
@@ -56,7 +71,7 @@ class RF24IPInterface
                 #endif
             }  else {
                 #if DEBUG_CONNECT
-                Serial.print(F("Connection good."));
+                Serial.println(F("Connection good."));
                 #endif
             }
         }
@@ -91,6 +106,7 @@ class RF24IPInterface
                     #endif
                     success = false;
                 }
+                m_outgoing.stop();
             } else {
                 #if DEBUG_CONNECT
                 Serial.println("Not Connected");
@@ -98,8 +114,8 @@ class RF24IPInterface
                 success = false;
                 delay(100);
             }
-            m_outgoing.stop();
         }
+        logDisconnect( !success );
 
         return success;
     }
@@ -119,6 +135,16 @@ class RF24IPInterface
     IPAddress& getAddress() {
         return m_ip;
     }
+    void logDisconnect( bool unnatural ) {
+        if (unnatural) {
+            m_unnatural++;
+            #if DEBUG_CONNECT
+            Serial.print("Logging unnatural disconnect #");Serial.println(m_unnatural);
+            #endif
+        } else {
+            m_unnatural = 0;
+        }
+    }
   protected:
     RF24                m_radio;
     RF24Network         m_network;
@@ -129,6 +155,8 @@ class RF24IPInterface
     EthernetClient      m_outgoing;
     #endif
     uint32_t            m_heartbeat;
+    unsigned            m_unnatural;
+    static const unsigned m_maxUnnatural = 8;
 };
 
 #endif
