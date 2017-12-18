@@ -12,6 +12,7 @@ X(  CmdOff,         "off",  false, CmdArgInt )
 X(  CmdStatus,      "stat", false, CmdArgNone )
 X(  CmdSaveSettings,"sset", false,  CmdArgNone )
 X(  CmdRestoreSettings,"rset", false,  CmdArgNone )
+X(  CmdRenewRadio,  "rr",   false, CmdArgNone )
 X(  CmdNone,        "nop",  false, CmdArgNone )
 
 #endif

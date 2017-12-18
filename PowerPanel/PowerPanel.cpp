@@ -1,5 +1,12 @@
 /*
  */
+//
+// Debug prints.
+//#define DEBUG_STARTUP 1
+//#define DEBUG_CHANGES 1
+//#define DEBUG_CMD 1
+//#define DEBUG_CONNECT 1
+
 
 #include <Arduino.h>
 #include "Switch.h"
@@ -16,13 +23,6 @@
 
 #define RF24_CE          14
 #define RF24_CSN         15
-
-
-// Debug prints.
-//#define DEBUG_STARTUP 1
-//#define DEBUG_CHANGES 1
-//#define DEBUG_CMD 1
-//#define DEBUG_CONNECT 1
 
 
 
@@ -144,7 +144,9 @@ void processCommand()
             case CmdRestoreSettings:
                 restoreSettings();
                 break;
-
+            case CmdRenewRadio:
+                rf24.init();
+                break;
             default:
                 #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
@@ -155,10 +157,12 @@ void processCommand()
             cmd->ack();
         }
         cmd->parser()->reset();
+        cmd->disconnect();
     } else if (error) {
         #if DEBUG_CMD
         Serial.println(F("Error in command\n"));
         #endif
+        cmd->disconnect();
     }
 }
 
