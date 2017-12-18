@@ -5,7 +5,7 @@
 #define DEBUG_STARTUP 1
 #define DEBUG_CHANGES 0
 #define DEBUG_CMD 1
-#define DEBUG_CONNECT 0
+#define DEBUG_CONNECT 1
 #define DEBUG_PUMP 1
 
 
@@ -41,7 +41,6 @@
 RF24IPInterface rf24( 7, RF24_CE, RF24_CSN );
 RF24EthernetClass   RF24Ethernet( rf24.getRadio(), rf24.getNetwork(), rf24.getMesh() );
 EthernetServer rf24EthernetServer(1000);
-//EthernetClient rf24Client;
 
 // Ultrasonic
 SingleDistanceSensor distanceSensor( TRIG, ECHO, 50 );
@@ -52,17 +51,18 @@ Switch floatSwitch( FLOAT_SW, LOW );
 
 #define NPUMPS 4
 
-#define EE_SIG              128
+#define EE_SIG              129
 #define SIG_EE_ADDR         0
 #define SIG_EE_SIZE         sizeof(unsigned char)
 
-#define PUMP_EE_ADDR        SIG_EE_ADDR + SIG_EE_SIZE
+#define T_CTRL_EE_ADDR      SIG_EE_ADDR + SIG_EE_SIZE
+#define T_CTRL_EE_SIZE      TempController::ee_size()
+
+#define PUMP_EE_ADDR        T_CTRL_EE_ADDR + T_CTRL_EE_SIZE
 #define PUMP_EE_ADDR_I(i)   (PUMP_EE_ADDR + (i * ControllablePump::ee_size()))
 #define PUMP_EE_SIZE        (NPUMPS*ControllablePump::ee_size())
 
-#define T_CTRL_EE_ADDR      PUMP_EE_ADDR + PUMP_EE_SIZE
-#define T_CTRL_EE_SIZE      TempController::ee_size()
-
+#define NEXT_EE_ADDR        PUMP_EE_ADDR + PUMP_EE_SIZE
 
                         // PIN, SWITCH, MINPCT
 ControllablePump mainCirc( 5,   2,      20, PUMP_EE_ADDR_I(0), rf24 );
@@ -172,7 +172,7 @@ static void getStatus( Command* cmd )
 
 static void getPumpStatus( Command* cmd )
 {
-    StaticJsonBuffer<830> jsonBuffer;
+    StaticJsonBuffer<920> jsonBuffer;
 
     JsonArray& array = jsonBuffer.createArray();
     for (int ipump=0; ipump < 4; ipump++ ) {
@@ -180,19 +180,20 @@ static void getPumpStatus( Command* cmd )
         JsonObject& jpump = array.createNestedObject();
         jpump["on"] = (pump->getCurSpeed() > 0) ? true : false;
         jpump["mode"] = (int)pump->getMode();
-        jpump["cur_speed"] = pump->getCurSpeed();
-        jpump["top_speed"] = pump->getTopSpeed();
+        jpump["cur_speed"] = pump->getCurSpeedPct();
+        jpump["top_speed"] = pump->getTopSpeedPct();
+        jpump["slow_speed"] = pump->getSlowSpeedPct();
         jpump["ramp_sec"] = pump->getRampSec();
         jpump["hold_sec"] = pump->getHoldSec();
-        jpump["ramp_range"] = pump->getRampRange();
-        jpump["hold_range"] = pump->getHoldRange();
-        jpump["last_change"] = pump->getLastChangeTime();
+        jpump["ramp_range"] = pump->getRampRangePct();
+        jpump["hold_range"] = pump->getHoldRangePct();
+        jpump["temp_shutdown"] = pump->tempShutdownRemainingSec();
     }
     cmd->ack(array);
 
    /*
     https://bblanchon.github.io/ArduinoJson/assistant/
-    {"on":false,"mode":1,"cur_speed":0,"top_speed":0,"ramp_sec":1,"hold_sec":10,"ramp_range":0,"hold_range":0,"last_change":0}
+    {"on":false,"mode":1,"cur_speed":0,"top_speed":0,"slow_speed":0,"ramp_sec":1,"hold_sec":10,"ramp_range":0,"hold_range":0,"last_change":0}
     Copied into an array of 4 of these: 824
    */
 }
@@ -282,12 +283,17 @@ void processCommand()
                 if ((ipump >= NPUMPS) || (ipump < 0))
                     break;
                 int pct;
-                cmd->arg(0)->getInt(pct);
-                if (pct < 0)
-                    pct = 0;
-                else if (pct > 100)
-                    pct = 100;
-                pumps[ipump]->setTopSpeed( pct ); 
+                for ( int i=0; i < 2; i++ ) {
+                    cmd->arg(i)->getInt(pct);
+                    if (pct < 0)
+                        pct = 0;
+                    else if (pct > 100)
+                        pct = 100;
+                    if (i==0)
+                        pumps[ipump]->setTopSpeed( pct ); 
+                    else
+                        pumps[ipump]->setSlowSpeed( pct ); 
+                }
                 break;
             }
             case CmdTempShutdown: {
@@ -324,7 +330,7 @@ void processCommand()
                 int step=-1;
                 cmd->arg(0)->getInt(step);
                 cmd->ack( EC_probe.calStep( step ) );
-                break;
+                    break;
             }
             case CmdCalPH: {
                 int step=-1;
@@ -358,6 +364,9 @@ void processCommand()
                 cmd->ack( tempController.calStep( step, cmd->ID(), TF ) );
                 break;
             }
+            case CmdRenewRadio:
+                rf24.init();
+                break;
             default:
                 #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
@@ -368,10 +377,12 @@ void processCommand()
             cmd->ack();
         }
         cmd->parser()->reset();
+        cmd->disconnect();
     } else if (error) {
         #if DEBUG_CMD
         Serial.println(F("Error in command\n"));
         #endif
+        cmd->disconnect();
     }
 }
 
