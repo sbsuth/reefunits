@@ -38,7 +38,7 @@ void setup() {
 
     pinMode( TACH, INPUT );
     pinMode( FAN_CTRL, OUTPUT );
-    digitalWrite( FAN_CTRL, LOW );
+    digitalWrite( FAN_CTRL, HIGH );
 
     button.setup();
     motion.setup();
