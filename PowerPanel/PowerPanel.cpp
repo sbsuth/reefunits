@@ -7,6 +7,8 @@
 //#define DEBUG_CMD 1
 //#define DEBUG_CONNECT 1
 
+#define RF24_RE_INIT_AFTER_NUM_EMPTY 2
+
 
 #include <Arduino.h>
 #include "Switch.h"
@@ -27,7 +29,8 @@
 
 
 // Network objects
-RF24IPInterface rf24( 5, RF24_CE, RF24_CSN );
+RF24IPInterface rf24( 5, RF24_CE, RF24_CSN, RF24_PA_LOW );
+DEFINE_RF24IPInterface_STATICS;
 RF24EthernetClass   RF24Ethernet( rf24.getRadio(), rf24.getNetwork(), rf24.getMesh() );
 EthernetServer rf24EthernetServer(1000);
 
@@ -55,6 +58,8 @@ void setup() {
   
   // Ethernet startup.
   rf24.init();
+  //rf24.getRadio().setDataRate( RF24_250KBPS );
+  //rf24.getRadio().setPALevel(RF24_PA_MIN);
   
   #if DEBUG_STARTUP
   Serial.println(F("Ready"));
@@ -153,6 +158,9 @@ void processCommand()
                 #endif
                 break;
         }
+        #if DEBUG_CONNECT
+        if (rf24Parser.stream()->connected()) {Serial.println("Disconnecting after command");}
+        #endif
         if (needResp) {
             cmd->ack();
         }
@@ -163,6 +171,10 @@ void processCommand()
         Serial.println(F("Error in command\n"));
         #endif
         cmd->disconnect();
+    } else {
+        #if DEBUG_CONNECT
+        if (rf24Parser.stream()->connected()) {Serial.println("Leaving with connection, but incomplete command");}
+        #endif
     }
 }
 
