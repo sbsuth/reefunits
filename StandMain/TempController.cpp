@@ -191,7 +191,7 @@ void TempController::saveSettings() {
 //  
 float TempController::adc2R( unsigned adc ) {
     float V = (adc * VREF)/1024;
-    return (R_pulldown * (m_VCC - V))/V;
+    return (R_pulldown * (m_VCC - V))/V; // ZERO DENOM!
 }
 
 // Adds a calibration point given a step and an externally measure temp.
@@ -231,15 +231,15 @@ bool TempController::setCal(    const CalSession& data, unsigned itherm )
         float lR0 = log(R0);
         float lR1 = log(R1);
         float lR2 = log(R2);
-        float iT0 = 1/T0;
-        float iT1 = 1/T1;
-        float iT2 = 1/T2;
+        float iT0 = 1/T0; // ZERO DENOM!
+        float iT1 = 1/T1; // ZERO DENOM!
+        float iT2 = 1/T2; // ZERO DENOM!
         float lR0_3 = pow(lR0,3);
         float lR1_3 = pow(lR1,3);
         float lR2_3 = pow(lR2,3);
-        C =   ((iT0-iT1)     - (((lR0-lR1) * (iT0-iT2))/(lR0-lR2))) 
-            / ((lR0_3-lR1_3) - (((lR0-lR1) * (lR0_3-lR2_3))/(lR0-lR2)));
-        B = ((iT0-iT1) - (C * (lR0_3-lR1_3))) / (lR0-lR1);
+        C =   ((iT0-iT1)     - (((lR0-lR1) * (iT0-iT2))/(lR0-lR2)))  // ZERO DENOM!
+            / ((lR0_3-lR1_3) - (((lR0-lR1) * (lR0_3-lR2_3))/(lR0-lR2))); // ZERO DENOM!
+        B = ((iT0-iT1) - (C * (lR0_3-lR1_3))) / (lR0-lR1); // ZERO DENOM!
         A = iT0 - C*lR0_3 - B*lR0;
 
         #if DEBUG_TEMP
@@ -267,6 +267,6 @@ float TempController::calcTemp( float R, unsigned itherm )
 {
      float lR = log(R);
      float T = m_A[itherm] + m_B[itherm] * lR + m_C[itherm] * pow(lR,3);
-     T = 1.0/T;
+     T = 1.0/T; // ZERO DENOM!
      return k2f(T);
 }
