@@ -2,12 +2,15 @@
  */
 
 // Debug prints.
-#define DEBUG_STARTUP 1
-#define DEBUG_CHANGES 0
-#define DEBUG_CMD 1
-#define DEBUG_CONNECT 1
-#define DEBUG_PUMP 1
+//#define DEBUG_STARTUP 1
+//#define DEBUG_CHANGES 1
+//#define DEBUG_CMD 1
+//#define DEBUG_CONNECT 1
+//#define DEBUG_PUMP 1
 
+// Cause period re-init of RF24 subsystem.
+#define AUTO_RE_INIT_INTERVAL 0
+//#define AUTO_RE_INIT_INTERVAL 030000
 
 
 #include <Arduino.h>
@@ -39,6 +42,7 @@
 
 // Network objects
 RF24IPInterface rf24( 7, RF24_CE, RF24_CSN );
+DEFINE_RF24IPInterface_STATICS;
 RF24EthernetClass   RF24Ethernet( rf24.getRadio(), rf24.getNetwork(), rf24.getMesh() );
 EthernetServer rf24EthernetServer(1000);
 
@@ -101,7 +105,15 @@ void setup() {
     tempController.setup( useSettings );
 
     // Ethernet startup.
+    #if DEBUG_STARTUP
+    Serial.println(F("Before rf24.init()"));
+    #endif
     rf24.init();
+    //rf24.getRadio().setDataRate( RF24_250KBPS );
+    rf24.getRadio().setPALevel(RF24_PA_LOW);
+    #if DEBUG_STARTUP
+    Serial.println(F("After rf24.init()"));
+    #endif
 
     for ( int ipump=0; ipump < NPUMPS; ipump++ )
         pumps[ipump]->setup( useSettings );
@@ -151,7 +163,7 @@ static void getStatus( Command* cmd )
    {
      "pH": 1.23,
      "EC": 10,
-     "SA:": 10,
+     "SAL:": 10,
      "SG": 10,
      "TDS": 10,
      "sump_sw": true,
@@ -166,13 +178,13 @@ static void getStatus( Command* cmd )
      "tper": 10000,
      "tsens": 1.23
    }
-    320
+    321
    */
 }
 
 static void getPumpStatus( Command* cmd )
 {
-    StaticJsonBuffer<920> jsonBuffer;
+    StaticJsonBuffer<936> jsonBuffer;
 
     JsonArray& array = jsonBuffer.createArray();
     for (int ipump=0; ipump < 4; ipump++ ) {
@@ -193,8 +205,8 @@ static void getPumpStatus( Command* cmd )
 
    /*
     https://bblanchon.github.io/ArduinoJson/assistant/
-    {"on":false,"mode":1,"cur_speed":0,"top_speed":0,"slow_speed":0,"ramp_sec":1,"hold_sec":10,"ramp_range":0,"hold_range":0,"last_change":0}
-    Copied into an array of 4 of these: 824
+    {"on":false,"mode":1,"cur_speed":0,"top_speed":0,"slow_speed":0,"ramp_sec":1,"hold_sec":10,"ramp_range":0,"hold_range":0,"temp_shutdown":0}
+    Copied into an array of 4 of these: 924
    */
 }
 
@@ -240,7 +252,7 @@ void processCommand()
     } else if ((cmd = rf24Parser.getCommand( &rf24Cmd, error )) ) {
     }
     if (cmd) {
-        bool needResp = true;
+        bool respDone = false;
         #if DEBUG_CMD
         Serial.print(F("Command: "));
         cmd->printName();
@@ -255,10 +267,12 @@ void processCommand()
 
             case CmdStatus:
                 getStatus(cmd);
+                respDone = true;
                 break;
 
             case CmdPumpStatus:
                 getPumpStatus(cmd);
+                respDone = true;
                 break;
 
             case CmdSaveSettings:
@@ -373,7 +387,10 @@ void processCommand()
                 #endif
                 break;
         }
-        if (needResp) {
+        #if DEBUG_CONNECT
+        if (rf24Parser.stream()->connected()) {Serial.println("Disconnecting after command");}
+        #endif
+        if (!respDone) {
             cmd->ack();
         }
         cmd->parser()->reset();
@@ -383,6 +400,10 @@ void processCommand()
         Serial.println(F("Error in command\n"));
         #endif
         cmd->disconnect();
+    } else {
+        #if DEBUG_CONNECT
+        if (rf24Parser.stream()->connected()) {Serial.println("Leaving with connection, but incomplete command");}
+        #endif
     }
 }
 
@@ -391,6 +412,17 @@ static uint32_t mesh_timer = 0;
 
 // the loop function runs over and over again forever
 void loop() {
+  #if DEBUG_CONNECT
+  static bool rad_fail = false;
+  if (!rad_fail && rf24.getRadio().failureDetected) {
+    Serial.println("FAILURE DETECTED IN RADIO");
+  }
+  static unsigned long last=0;
+  if ((millis() - last) > 5000) {
+    last = millis();
+    Serial.print("UPTIME: ");Serial.print(millis()/1000); Serial.println(" sec");
+  }
+  #endif
   rf24.update();
 
   unsigned short dist = 0;
