@@ -11,6 +11,6 @@ serial:
 	C:/Program\ Files\ \(x86\)/PuTTY/putty.exe -load Arduino &
 
 $(PROJECT).o : $(MCU)/$(PROJECT).o
-Command.o : cmds.h
+Command.o : cmds.h ../utils/ControllablePump.h ../utils/RemoteSetting.h
 
 -include Makefile.d
