@@ -156,8 +156,10 @@ class Command {
         m_parser = p;
     }
     inline void ack();
+#if USE_JSON
     inline void ack( JsonObject& json );
     inline void ack( JsonArray& json );
+#endif
     inline void disconnect( boolean unnatural=false );
     void ack( bool val );
     void ack( int val );
@@ -274,14 +276,17 @@ class InStream
         return true;
     }
     virtual void ack( Command* cmd ) {}
+#if USE_JSON
     virtual void ack( Command* cmd, JsonObject& json ) {
         ack(cmd);
     }
     virtual void ack( Command* cmd, JsonArray& json ) {
         ack(cmd);
     }
+#endif
     virtual void pingActivity() {}
     virtual void disconnect( boolean unnatural=false ) {}
+    virtual bool connected() {return false;}
 };
 
 #if USE_STDIO
@@ -322,8 +327,10 @@ class ArduinoSerialIO : public InStream
         Serial.write(c);
         return true;
     }
+#if USE_JSON
     virtual void ack( Command* cmd, JsonObject& json );
     virtual void ack( Command* cmd, JsonArray& json );
+#endif
 };
 #endif
 
@@ -374,8 +381,13 @@ class EthernetSerialIO : public InStream
     virtual void ack( Command* cmd, JsonObject& json );
     virtual void ack( Command* cmd, JsonArray& json );
     virtual void disconnect( bool unnatural=false );
+    virtual bool connected() {return client().connected();}
 
-    EthernetClient& client() {
+    // We have a single "global" client which is the one last
+    // used for input.  In a system where there is only one 
+    // UIP connection, this is a proxy for "the UIP connection"
+    // and it can be used to check if anyone is currently connected.
+    static EthernetClient& client() {
         return m_client;
     }
     virtual void pingActivity();
@@ -384,8 +396,13 @@ class EthernetSerialIO : public InStream
     static const unsigned long m_connectionTimeout = 5000;
   protected:
     RF24IPInterface* m_interface;
-    EthernetClient m_client; // Make it simple to get client from last command.
+    static EthernetClient m_client; 
 };
+
+// One file must include this/
+#define DEFINE_RF24IPInterface_STATICS \
+    RF24IPInterface* RF24IPInterface::m_inst = 0; \
+    EthernetClient EthernetSerialIO::m_client
 #endif
 
 
@@ -406,7 +423,7 @@ class CommandParser
         reset();
     }
 
-    Command* getCommand( Command* cmd, bool &error );
+    Command* getCommand( Command* cmd, bool &error, unsigned timeout=100 );
 
     void reset() {
         m_state = ExpCmd;
@@ -464,6 +481,7 @@ inline void Command::ack()
     parser()->stream()->ack(this);
 }
 
+#if USE_JSON
 inline void Command::ack( JsonObject& json )
 {
     parser()->stream()->ack(this,json);
@@ -473,6 +491,7 @@ inline void Command::ack( JsonArray& json )
 {
     parser()->stream()->ack(this,json);
 }
+#endif
 
 inline void Command::disconnect( bool unnatural )
 {
