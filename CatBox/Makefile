@@ -1,7 +1,7 @@
 PROJECT = CatBox
 MCU := atmega328p
 ARDUINO_VERSION := 10607
-PORT := \\.\COM9
+PORT := \\.\COM7
 UPLOAD_RATE := 57600
 
 include ../utils/Makefile.arduino
