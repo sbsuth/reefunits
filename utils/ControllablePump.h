@@ -3,6 +3,9 @@
 
 #include <EEPROM.h>
 #include "RF24Interface.h"
+#include "RemoteSetting.h"
+
+#define USE_REMOTE_SETTABLE 1
 
 class ControllablePump
 {
@@ -14,6 +17,9 @@ class ControllablePump
       , m_rampOffset(0), m_holdOffset(0)
       , m_lastChangeTime(0), m_tempShutoffUntil(0), m_upDown(0), m_retries(0)
       , m_rf24(rf24)
+      #if USE_REMOTE_SETTABLE
+      , m_switch(this)
+      #endif
     {}
 
     enum Mode {
@@ -26,7 +32,8 @@ class ControllablePump
         NumModes = 6
     };
 
-    const unsigned ReassertSwitchInterval = 10000;
+    //static const unsigned ReassertSwitchInterval = 10 * 1000;
+    static const unsigned ReassertSwitchInterval = 60 * 1000U;
 
     void setup( bool useSettings ) {
       pinMode( m_pin, OUTPUT );
@@ -82,7 +89,7 @@ class ControllablePump
     }
     static unsigned char getRangePct( unsigned int range_ms, unsigned char hold_sec ) {
         // range is in ms, hold is in sec, we want the ration as a percent.
-        return (range_ms * 1.0)/(hold_sec * 10.0);
+        return (range_ms * 1.0)/(hold_sec * 10.0); // ZERO DENOM!
     }
 
     unsigned long getLastChangeTime() {
@@ -208,7 +215,7 @@ class ControllablePump
                         }
                     } else {
                         unsigned long delta = ((unsigned long)(m_topSpeed - minSpeed) * (curTime - m_lastChangeTime))
-                                                / (rampMsec+m_rampOffset);
+                                                / (rampMsec+m_rampOffset); // ZERO DENOM!
                         if (delta) {
                             if (m_upDown > 0) {
                                 newSpeed = m_curSpeed + delta;
@@ -295,6 +302,7 @@ class ControllablePump
     // Periodically force a switch update.
     // Skew delays between checks by pin of device so they don't all happen together.
     bool calcReassertSwitch( unsigned long curTime ) {
+        #if !USE_REMOTE_SETTABLE
         // Never reassert if in Test mode.
         if (m_mode == Test)
             return false;
@@ -304,6 +312,10 @@ class ControllablePump
         } else {
             return false;
         }
+        #else
+        // Rely on RemoteSettable.
+        return false;
+        #endif
     }
 
      static int calcRandom( unsigned int sec, unsigned int range ) {
@@ -321,6 +333,7 @@ class ControllablePump
      // If going from or to 0, turn on or off the switch.
      // Also force an "on" if force is set.
      void syncSwitch( unsigned char newSpeed, bool force ) {
+     #if !USE_REMOTE_SETTABLE
          char cmd[8];
          char* np;
          // If we're retrying, auto-force.
@@ -348,14 +361,18 @@ class ControllablePump
                  *pc++ = '\n';
                  *pc++ = 0;
                  unsigned long tstart = millis();
-                 Serial.print("Start send to radio");Serial.flush();
                  if (!m_rf24.sendToRadioClient( 5, cmd, 3 ) && !m_retries && !is_retry) {
                     // Initiate a set of retries on next update.
                     m_retries = 5;
                  }
-                 Serial.print("Done send to radio");Serial.flush();
              }
          }
+         #else
+         bool wantOn = (newSpeed > 0);
+         m_switch.setWant( wantOn, force );
+
+         m_switch.update();
+         #endif
     }
             
 
@@ -435,6 +452,39 @@ class ControllablePump
     unsigned char m_retries;
     static int    m_rand;
     RF24IPInterface& m_rf24;
+
+    class SwitchSettable : public RemoteSettable<char> 
+    {
+      public:
+        SwitchSettable( ControllablePump* p ) 
+            : m_pump(p)
+        {
+            m_wantValue = 0;
+            m_confirmedValue = -1;
+        }
+        virtual const char* cmd() {
+            static char buf[8];
+            char* pc = &buf[0];
+            strcpy( buf, m_wantValue ? "on " : "off " );
+            while (*pc) pc++;
+            *pc++ = '0' + m_pump->m_swAddr;
+            *pc++ = '\n';
+            *pc++ = 0;
+            return buf;
+        }
+        virtual unsigned reassertInterval() {
+            // Give different intervals for different switches to reduce collisions.
+            return (ReassertSwitchInterval + (m_pump->m_swAddr * 1000));
+        }
+        virtual unsigned char instrAddr() {
+            return 5;
+        }
+      protected:
+        ControllablePump*   m_pump;
+    };
+    #if USE_REMOTE_SETTABLE
+    SwitchSettable  m_switch;
+    #endif
 };
 
 int ControllablePump::m_rand __attribute__((weak)) = 12345;
