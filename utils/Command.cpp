@@ -174,7 +174,7 @@ bool CommandParser::nextToken( bool& eol, bool& error )
             m_tokenOK = true;
             *pc = 0;
             #if DEBUG_TOKEN
-            Serial.print(F("TOKEN: ")); Serial.println(m_token);
+            Serial.print(F("TOKEN: ")); Serial.println(m_token); 
             #endif
         } else {
             *pc++ = c;
@@ -206,10 +206,11 @@ void CommandParser::processHTTPHeader( bool eol )
         Serial.print(F("Start HTTP ")); Serial.println(m_token);
         #endif
         setHTTPHeader(1);
-        reset();
+        m_state = ExpHTTP;
     } else if ( str_match(m_token,"suth-cmd:",false) ) {
         setHTTPHeader(2);
         reset();
+        m_tokenOK = true; // Handled specially as a "continue" in caller.
         #if DEBUG_HTTP
         Serial.println(F("Start suth-cmd: "));
         #endif
@@ -229,106 +230,117 @@ void CommandParser::processHTTPHeader( bool eol )
 }
 
 
-Command* CommandParser::getCommand( Command* cmd, bool& error )
+Command* CommandParser::getCommand( Command* cmd, bool& error, unsigned timeout )
 {
     bool eol = false;
+    unsigned long lastTime = millis() + timeout;
 
     cmd->setParser(this);
 
-    if ( !nextToken( eol, error ) ) {
-        if (error)
-            reset();
-        return 0;
-    }
-    switch (m_state) {
-        case ExpHTTP:
-            if (!inHTTPHeader())
-                m_state = ExpCmd;
-            break;
-        case ExpCmd:
-            if ( !decodeCommand( error ) )  {
-                if (error)
+    do {
+        if ( !nextToken( eol, error ) ) {
+            if (error)
+                reset();
+            return 0;
+        }
+        switch (m_state) {
+            case ExpHTTP:
+                if (!inHTTPHeader())
+                    m_state = ExpCmd;
+                break;
+            case ExpCmd:
+                if ((inHTTPHeader() == 2) && !m_token[0]) {
+                    // Wierd state after finding suth-cmd.  Want to read next token.
+                    continue;
+                }
+                if ( !decodeCommand( error ) )  {
+                    if (error)
+                        reset();
+                    if (inHTTPHeader()) {
+                        break;
+                    } else {
+                        return 0;
+                    }
+                }
+                cmd->setKind( m_descr->kind() );
+                m_argNum = 0;
+                if (m_descr->hasID()) {
+                    if (eol) {
+                        error = true;
+                        reset();
+                        return 0;
+                    }
+                    m_state = ExpId;;
+                } else if (!setExpArg(0,eol,error)) {
                     reset();
-                return 0;
-            }
-            cmd->setKind( m_descr->kind() );
-            m_argNum = 0;
-            if (m_descr->hasID()) {
-                if (eol) {
+                    return 0;
+                }
+                break;
+            case ExpId: {
+                int id = 0;
+                if ( decodeInt( id ) ) {
+                    cmd->setID(id);
+                    if (!setExpArg(0,eol,error)) {
+                        reset();
+                        return 0;
+                    }
+                } else {
                     error = true;
                     reset();
                     return 0;
                 }
-                m_state = ExpId;;
-            } else if (!setExpArg(0,eol,error)) {
-                reset();
-                return 0;
+                break;
             }
-            break;
-        case ExpId: {
-            int id = 0;
-            if ( decodeInt( id ) ) {
-                cmd->setID(id);
-                if (!setExpArg(0,eol,error)) {
+            case ExpInt: {
+                int i = 0;
+                if ( decodeInt( i ) ) {
+                    cmd->arg(m_argNum)->setInt(i);
+                    if ( !setExpArg( ++m_argNum,eol,error )) {
+                        reset();
+                        return 0;
+                    }
+                } else {
+                    error = true;
                     reset();
                     return 0;
                 }
-            } else {
-                error = true;
-                reset();
-                return 0;
+                break;
             }
-            break;
-        }
-        case ExpInt: {
-            int i = 0;
-            if ( decodeInt( i ) ) {
-                cmd->arg(m_argNum)->setInt(i);
+            case ExpFloat: {
+                float f = 0.0;
+                if ( decodeFloat( f ) ) {
+                    cmd->arg(m_argNum)->setFloat(f);
+                    if ( !setExpArg( ++m_argNum,eol,error )) {
+                        reset();
+                        return 0;
+                    }
+                } else {
+                    error = true;
+                    reset();
+                    return 0;
+                }
+                break;
+            }
+            case ExpStr:
+                cmd->arg(m_argNum)->setStr( m_token );
                 if ( !setExpArg( ++m_argNum,eol,error )) {
                     reset();
                     return 0;
                 }
-            } else {
-                error = true;
-                reset();
-                return 0;
-            }
-            break;
+                break;
         }
-        case ExpFloat: {
-            float f = 0.0;
-            if ( decodeFloat( f ) ) {
-                cmd->arg(m_argNum)->setFloat(f);
-                if ( !setExpArg( ++m_argNum,eol,error )) {
-                    reset();
-                    return 0;
-                }
-            } else {
-                error = true;
-                reset();
-                return 0;
-            }
-            break;
-        }
-        case ExpStr:
-            cmd->arg(m_argNum)->setStr( m_token );
-            if ( !setExpArg( ++m_argNum,eol,error )) {
-                reset();
-                return 0;
-            }
-            break;
-    }
-    if (!error) {
-        if (inHTTPHeader()==1) 
-            m_state = ExpHTTP;
-        
-        if (m_state == ExpCmd)
-            return cmd;
-        else
+        if (!error) {
+            if (inHTTPHeader()==1) 
+                m_state = ExpHTTP;
+            
+            if (m_state == ExpCmd)
+                return cmd;
+        } else {
             return 0;
-    } else {
-        return 0;
-    }
+        }
+    } while (millis() < lastTime);
+
+    return 0;
 }
 
 #if USE_JSON
@@ -345,16 +357,21 @@ void EthernetSerialIO::pingActivity() {
 }
 
 bool EthernetSerialIO::read( char* c ) {
-    EthernetClient newClient = m_interface->getServer().available();
-    int n = newClient.available();
-    static bool first = true;
+    bool wasConnected = m_client.connected();
+    if (!wasConnected) {
+        // We keep a copy, and set it globally so others can see we're connected.
+        m_client = m_interface->getServer().available();
+        m_interface->setIncomingClient( m_client );
+    }
+    int n = m_client.available();
     if (n > 0) {
-        m_client = newClient; // Limit is 1 in library, so we get away with this...
+        #if DEBUG_CONNECT
+        if (!wasConnected) {Serial.print("New connection on read.");Serial.print(n);Serial.println(" available");}
+        #endif
         *c = m_client.read();
         #if DEBUG_CHAR
         Serial.print("CHAR: '");Serial.print(*c);Serial.println("'");
         #endif
-        first = false;
         pingActivity();
         return true;
     } else if ( m_client && m_client.connected() && ((millis() - m_interface->lastHeartbeat()) > m_connectionTimeout)) {
@@ -379,6 +396,7 @@ void EthernetSerialIO::ack( Command* cmd )
     pingActivity();
 }
 
+#if USE_JSON
 void EthernetSerialIO::ack( Command* cmd, JsonObject& json )
 {
     write_pgm(json_resp_header);
@@ -403,15 +421,19 @@ void EthernetSerialIO::ack( Command* cmd, JsonArray& json )
     disconnect(false);
     pingActivity();
 }
+#endif
 
 void EthernetSerialIO::disconnect( bool unnatural )
 {
     m_client.stop();
+    m_client = EthernetClient();
+    m_interface->setIncomingClient( m_client );
     m_interface->logDisconnect( unnatural );
 }
 
 #endif
 
+#if USE_JSON
 #if defined(ARDUINO)
 void ArduinoSerialIO::ack( Command* cmd, JsonObject& json )
 {
@@ -427,6 +449,7 @@ void ArduinoSerialIO::ack( Command* cmd, JsonArray& json )
     Serial.println("");
     #endif
 }
+#endif
 #endif
 
 void Command::printName()
@@ -490,6 +513,7 @@ int main( int argc, char** argv)
 #endif
 
 
+#if USE_JSON
 //
 // Utilities to ack simple values in Json wrappers.
 // //
@@ -513,7 +537,7 @@ void Command::ack( int val )
     ack( json );
     #endif
 }
-
+#endif
 void Command::ack( float val )
 {
     #if USE_JSON
