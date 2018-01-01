@@ -12,5 +12,6 @@ serial:
 
 $(PROJECT).o : $(MCU)/$(PROJECT).o
 Command.o : cmds.h ../utils/ControllablePump.h ../utils/RemoteSetting.h
+TempController.o: TempController.h
 
 -include Makefile.d
