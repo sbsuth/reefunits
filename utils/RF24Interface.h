@@ -35,6 +35,7 @@ class RF24IPInterface
     void init() {
         Ethernet.begin(m_ip);
         m_mesh.begin(MESH_DEFAULT_CHANNEL, RF24_1MBPS, 5000);
+        //m_mesh.begin(MESH_DEFAULT_CHANNEL, RF24_250KBPS, 5000);
         m_radio.setPALevel(m_pa_level);
         IPAddress gwIP(10, 10, 2, 2);
         Ethernet.set_gateway(gwIP);
