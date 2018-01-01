@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include "Avg.h"
 
-#define DEBUG_TEMP 0
+//#define DEBUG_TEMP 1
 
 class TempController
 {
@@ -87,6 +87,7 @@ class TempController
 
     bool calStep( unsigned step, unsigned itherm, float TF );
 
+    void ackCalConsts( class Command* cmd );
   protected:
     unsigned char   m_ctrlPin;
     unsigned char   m_tempPin[2];

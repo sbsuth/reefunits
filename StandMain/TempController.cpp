@@ -1,6 +1,8 @@
 #include <TempController.h>
 #include <EEPROM.h>
 #include <math.h>
+#include <ArduinoJson.h>
+#include "Command.h"
 
 
 TempController::TempController(   int ctrlPin, int temp1Pin, int temp2Pin, unsigned confAddr )
@@ -18,15 +20,15 @@ TempController::TempController(   int ctrlPin, int temp1Pin, int temp2Pin, unsig
     m_setTemp = 79;
     m_samplePeriod = 500;
     m_sensitivity = 0.25;
-    m_VCC = 4.85;
+    m_VCC = 4.88;
     
     // Taken from an initial calibration.  But they don't seem right, so update on next cal.
-    m_A[0] = 0.00771;
-    m_B[0] = -0.0083;
-    m_C[0] = 0.00000;
-    m_A[1] = 0.01187;
-    m_B[1] = -0.00149;
-    m_C[1] = 0.00001;
+    m_A[0] =  0.0023715203;
+    m_B[0] =  0.0000152698;
+    m_C[0] =  0.0000010045;
+    m_A[1] =  0.0002206226;
+    m_B[1] =  0.0003594418;
+    m_C[1] = -0.0000002995;
 }
 
 void TempController::setup( bool useSettings )
@@ -49,6 +51,10 @@ void TempController::setup( bool useSettings )
     analogReference( INTERNAL2V56 );
 }
 
+static double scaleFloat( float v ) {
+    return v * 1000.0;
+}
+
 bool TempController::update()
 {
     // Sample temp on one sensor every m_samplePeriod ms.
@@ -61,7 +67,7 @@ bool TempController::update()
             float R = adc2R(adc);
             float TF = calcTemp( R, m_lastSampledProbe );
             #if DEBUG_TEMP
-            Serial.print("TEMP: adc=");Serial.print(adc);
+            Serial.print("TEMP: ");Serial.print(m_lastSampledProbe);Serial.print(": adc=");Serial.print(adc);
             Serial.print(", R=");Serial.print(R);
             Serial.print(", TF=");Serial.print(TF);
             Serial.println("");
@@ -77,6 +83,8 @@ bool TempController::update()
     digitalWrite( m_ctrlPin, m_heatOn ? HIGH : LOW );
 
 }
+
+
 
 unsigned long TempController::timeSinceLastOnOff() {
     return (millis() - m_lastOnOff);
@@ -147,6 +155,15 @@ void TempController::restoreSettings() {
 
     EEPROM.get( addr, m_C[1] );
     addr += sizeof(m_C[1]);
+
+   #if DEBUG_TEMP
+   Serial.print("TEMP: A[0]=");Serial.println(String(scaleFloat(m_A[0]),7));
+   Serial.print("TEMP: B[0]=");Serial.println(String(scaleFloat(m_B[0]),7));
+   Serial.print("TEMP: C[0]=");Serial.println(String(scaleFloat(m_C[0]),7));
+   Serial.print("TEMP: A[1]=");Serial.println(String(scaleFloat(m_A[1]),7));
+   Serial.print("TEMP: B[1]=");Serial.println(String(scaleFloat(m_B[1]),7));
+   Serial.print("TEMP: C[1]=");Serial.println(String(scaleFloat(m_C[1]),7));
+   #endif
 }
 
 void TempController::saveSettings() {
@@ -209,6 +226,8 @@ bool TempController::calStep( unsigned step, unsigned itherm, float TF )
     unsigned adc = analogRead( pinFor(itherm) );
     if (m_cal[itherm].addPoint( adc, TF ))
         return setCal( m_cal[itherm], itherm );
+    else
+        return true;
 }
 
 // Given thermistor 3 resistance values, 3 temperatures measured externally at
@@ -269,4 +288,30 @@ float TempController::calcTemp( float R, unsigned itherm )
      float T = m_A[itherm] + m_B[itherm] * lR + m_C[itherm] * pow(lR,3);
      T = 1.0/T; // ZERO DENOM!
      return k2f(T);
+}
+
+void TempController::ackCalConsts( Command* cmd )
+{
+    StaticJsonBuffer<160> jsonBuffer;
+
+    JsonObject& json = jsonBuffer.createObject();
+    json["A0"] = String(scaleFloat(m_A[0]),7);
+    json["B0"] = String(scaleFloat(m_B[0]),7);
+    json["C0"] = String(scaleFloat(m_C[0]),7);
+    json["A1"] = String(scaleFloat(m_A[1]),7);
+    json["B1"] = String(scaleFloat(m_B[1]),7);
+    json["C1"] = String(scaleFloat(m_C[1]),7);
+    cmd->ack( json );
+   /*
+    https://bblanchon.github.io/ArduinoJson/assistant/
+   {
+     "A0": "0.0001234",
+     "B0": "0.0001234",
+     "C0": "0.0001234",
+     "A1": "0.0001234",
+     "B1": "0.0001234",
+     "C1": "0.0001234",
+   }
+    142
+   */
 }
