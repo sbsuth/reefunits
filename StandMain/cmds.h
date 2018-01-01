@@ -20,6 +20,7 @@ X(  CmdHeat,            "heat", false,  CmdArgInt,  CmdArgNone, CmdArgNone )
 X(  CmdSetTargetTemp,   "stt",  false,  CmdArgFloat,CmdArgInt,  CmdArgFloat )
 X(  CmdCalTemp,         "calt", true,   CmdArgInt,  CmdArgFloat, CmdArgNone )
 X(  CmdRenewRadio,      "rr",   false,  CmdArgNone, CmdArgNone, CmdArgNone )
+X(  CmdCalConsts,       "cc",   false,  CmdArgNone, CmdArgNone, CmdArgNone )
 X(  CmdNone,            "nop",  false,  CmdArgNone, CmdArgNone, CmdArgNone )
 
 #endif
