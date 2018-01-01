@@ -41,7 +41,7 @@
 
 
 // Network objects
-RF24IPInterface rf24( 7, RF24_CE, RF24_CSN );
+RF24IPInterface rf24( 7, RF24_CE, RF24_CSN, RF24_PA_LOW );
 DEFINE_RF24IPInterface_STATICS;
 RF24EthernetClass   RF24Ethernet( rf24.getRadio(), rf24.getNetwork(), rf24.getMesh() );
 EthernetServer rf24EthernetServer(1000);
@@ -110,9 +110,12 @@ void setup() {
     #endif
     rf24.init();
     //rf24.getRadio().setDataRate( RF24_250KBPS );
-    rf24.getRadio().setPALevel(RF24_PA_LOW);
+    //rf24.getRadio().setDataRate( RF24_1MBPS );
+    //rf24.getRadio().setPALevel(RF24_PA_LOW);
     #if DEBUG_STARTUP
     Serial.println(F("After rf24.init()"));
+
+    Serial.print("DataRate=");Serial.println((int)rf24.getRadio().getDataRate()) ;
     #endif
 
     for ( int ipump=0; ipump < NPUMPS; ipump++ )
@@ -381,6 +384,9 @@ void processCommand()
             case CmdRenewRadio:
                 rf24.init();
                 break;
+            case CmdCalConsts: 
+                tempController.ackCalConsts( cmd );
+                break;
             default:
                 #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
@@ -455,8 +461,10 @@ void loop() {
 
   processCommand();
 
+  #if 1
   for ( int ipump=0; ipump < NPUMPS; ipump++ )
     pumps[ipump]->update();
+  #endif
 
 }
 
