@@ -37,8 +37,6 @@
 // Network objects
 RF24IPInterface rf24( 6, RF24_CE, RF24_CSN, RF24_PA_LOW );
 DEFINE_RF24IPInterface_STATICS;
-RF24EthernetClass   RF24Ethernet( rf24.getRadio(), rf24.getNetwork(), rf24.getMesh() );
-EthernetServer rf24EthernetServer(1000);
 
 // Ultrasonic
 SingleDistanceSensor distanceSensor( TRIG, ECHO, 40 );
@@ -115,7 +113,7 @@ static void getStatus( Command* cmd )
     json["top_on"] = pumpOn[I_TOP]->getVal() ? pumpOn[I_TOP]->timeAtValueSec() : 0;
     json["bot_on"] = pumpOn[I_BOT]->getVal() ? pumpOn[I_BOT]->timeAtValueSec() : 0;
     json["ro_mode"] = (int)roMode;
-    json["pause"] = extPause.getVal() / 1000U;
+    json["pause"] = extPause.getVal();
     cmd->ack( json );
    /*
     https://bblanchon.github.io/ArduinoJson/assistant/
@@ -293,6 +291,8 @@ void updateROOn()
 void loop() {
 
   rf24.update();
+
+  extPause.update();
 
   unsigned short dist = 0;
   if (distanceSensor.update(dist) ) {
