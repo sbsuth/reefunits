@@ -4,7 +4,7 @@ USE_PING =1
 USE_STEPPER =1
 MCU := atmega328p
 ARDUINO_VERSION := 10607
-PORT := \\.\COM9
+PORT := \\.\COM7
 UPLOAD_RATE := 57600
 
 include ../utils/Makefile.arduino
