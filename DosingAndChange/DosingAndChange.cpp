@@ -8,10 +8,17 @@
 #define DEBUG_CONNECT 0
 #define DEBUG_MEM 0
 
+#define RF24_RE_INIT_AFTER_NUM_EMPTY 5
+
+// Set to 1 to enable commands on serial port.
+// Turning this on will probably blow memory, and require turning off something
+// else, like PUMPS
+#define SERIAL_COMMANDS 0
+
 
 #include <Arduino.h>
 #include "Switch.h"
-#include "Avg.h"
+//#include "Avg.h"
 
 #include <ArduinoJson.h>
 #include <DosingPump.h>
@@ -56,7 +63,7 @@
 
 // Network.
 RF24IPInterface rf24( 8, RF24_CE, RF24_CSN );
-RF24EthernetClass   RF24Ethernet( rf24.getRadio(), rf24.getNetwork(), rf24.getMesh() );
+DEFINE_RF24IPInterface_STATICS(rf24);
 
 // Ultrasonic
 SingleDistanceSensor distanceSensor( TRIG, ECHO, 80 );
@@ -65,15 +72,17 @@ SingleDistanceSensor distanceSensor( TRIG, ECHO, 80 );
 // Float switch
 Switch floatSwitch( FLOAT_SW, LOW );
 
+DecayingState<bool> extPause( false, 5 * 60 * 1000UL );
+
 #define PUMPS 1
 
 #if PUMPS
 // Dosing pumps
-DosingPump calcPump(  DOSING_DIR,   CALC_STEP,      DOSING_I_SLEEP);
-DosingPump alkPump(   DOSING_DIR,   ALK_STEP,       DOSING_I_SLEEP);
-DosingPump magPump(   DOSING_DIR,   MAG_STEP,       DOSING_I_SLEEP );
-DosingPump oldOutPump(H2OX_DIR,     OLD_OUT_STEP,   H2OX_I_SLEEP);
-DosingPump newInPump( H2OX_DIR,     NEW_IN_STEP,    H2OX_I_SLEEP);
+DosingPump calcPump(  DOSING_DIR,   CALC_STEP,      DOSING_I_SLEEP, extPause);
+DosingPump alkPump(   DOSING_DIR,   ALK_STEP,       DOSING_I_SLEEP, extPause);
+DosingPump magPump(   DOSING_DIR,   MAG_STEP,       DOSING_I_SLEEP, extPause);
+DosingPump oldOutPump(H2OX_DIR,     OLD_OUT_STEP,   H2OX_I_SLEEP,   extPause);
+DosingPump newInPump( H2OX_DIR,     NEW_IN_STEP,    H2OX_I_SLEEP,   extPause);
 
 DosingPump* pumps[NUM_PUMPS] = {&calcPump, &alkPump, &magPump, &oldOutPump, &newInPump};
 unsigned short pumpRPM[NUM_PUMPS] = {200, 200, 200, 200, 200};
@@ -108,8 +117,10 @@ void setup() {
     #endif
 }
 
+#if SERIAL_COMMANDS
 static ArduinoSerialIO sis;
 static CommandParser serialParser( g_commandDescrs, &sis );
+#endif
 static EthernetSerialIO rfs( &rf24 );
 static CommandParser rf24Parser( g_commandDescrs, &rfs );
 static Command serialCmd;
@@ -123,7 +134,7 @@ static void getStatus( Command* cmd, int ipump )
     JsonObject& json = jsonBuffer.createObject();
 
     if (ipump < 0) {
-        json["dist"] = distanceSensor.lastSample();
+        json["dist"] = distanceSensor.currentCM();
         json["float_sw"] = floatSwitch.isOn();
         int numActive = 0;
         int numDisabled = 0;
@@ -138,6 +149,7 @@ static void getStatus( Command* cmd, int ipump )
         #endif
         json["num_active"] = numActive;
         json["num_dis"] = numDisabled;
+        json["pause"] = extPause.getVal();
     } else if (ipump < NUM_PUMPS) {
         #if PUMPS
         DosingPump* pump = pumps[ipump];
@@ -169,8 +181,11 @@ void processCommand()
     int i;
     bool error = false;
     Command* cmd = 0;
+    #if SERIAL_COMMANDS
     if ( (cmd=serialParser.getCommand( &serialCmd, error )) ) {
-    } else if ((cmd = rf24Parser.getCommand( &rf24Cmd, error )) ) {
+    } else 
+    #endif
+    if ((cmd = rf24Parser.getCommand( &rf24Cmd, error )) ) {
     }
     if (cmd) {
         bool needResp = true;
@@ -269,6 +284,13 @@ void processCommand()
                 break;
             }
             #endif
+            case CmdExtPause: {
+                int t = 0;
+                cmd->arg(0)->getInt(t);
+                extPause.setDecay(t * 1000UL);
+                extPause.setVal(true);
+                break;
+            }
             default:
                 #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
@@ -299,6 +321,8 @@ void loop() {
   #endif
 
   rf24.update();
+
+  extPause.update();
 
   floatSwitch.update();
   if (floatSwitch.changed()) {
