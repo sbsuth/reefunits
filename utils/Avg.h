@@ -5,25 +5,32 @@ template <int N, typename T=short>
 class Avg {
   public:
     Avg( T center=0 ) 
-       : m_avg(center)
+       : m_avg(center), m_nVals(0)
     {
        for ( int i=0; i < N; i++ )
          m_vals[i] = center;
     }
 
+    bool isFull() {
+        return (m_nVals >= N);
+    }
     T update( T newVal ) {
         T sum = newVal;
         for ( int i=0; i < (N-1); i++ ) {
-          m_vals[i] = m_vals[i+1];
+          bool good = (i > ((N-2)-m_nVals));
+          m_vals[i] = (good ? m_vals[i+1] : newVal);
           sum += m_vals[i];
         }
         m_vals[N-1] = newVal;
         m_avg = sum/T(N);
+        if (m_nVals < N)
+            m_nVals++;
         return avg();
     }
     T avg() const {
         return m_avg;
     }
+    unsigned char m_nVals;
     T m_avg;
     T m_vals[N];
 };
