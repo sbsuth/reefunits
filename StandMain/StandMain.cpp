@@ -11,6 +11,10 @@
 // Cause period re-init of RF24 subsystem.
 #define AUTO_RE_INIT_INTERVAL 0
 //#define AUTO_RE_INIT_INTERVAL 030000
+//
+
+// Setting prevents the periodic outbound cmds sent to the switch
+#define DISABLE_PUMP_SWITCH_SYNC 1
 
 
 #include <Arduino.h>
@@ -148,7 +152,7 @@ static void getStatus( Command* cmd )
     json["SAL"] = EC_probe.lastValue(2);
     json["SG"] = EC_probe.lastValue(3);
     json["sump_sw"] = floatSwitch.isOn();
-    json["sump_lev"] = distanceSensor.lastSample();
+    json["sump_lev"] = distanceSensor.currentCM();
     json["heat"] = tempController.heaterIsOn();
     json["theat"] = tempController.timeSinceLastOnOff(); // Dividing by 1000 fails.  Blows stack?
     float t = tempController.curTemp(0);
@@ -170,7 +174,7 @@ static void getStatus( Command* cmd )
      "SG": 10,
      "TDS": 10,
      "sump_sw": true,
-     "sump_lev": 1.23,
+     "sump_lev": 123,
      "heat": true,
      "theat": 1000,
      "temp0": 1.23,
@@ -181,7 +185,7 @@ static void getStatus( Command* cmd )
      "tper": 10000,
      "tsens": 1.23
    }
-    321
+    320
    */
 }
 
@@ -405,7 +409,6 @@ void processCommand()
         #if DEBUG_CMD
         Serial.println(F("Error in command\n"));
         #endif
-        cmd->disconnect();
     } else {
         #if DEBUG_CONNECT
         if (rf24Parser.stream()->connected()) {Serial.println("Leaving with connection, but incomplete command");}
@@ -431,10 +434,10 @@ void loop() {
   #endif
   rf24.update();
 
-  unsigned short dist = 0;
-  if (distanceSensor.update(dist) ) {
+  SingleDistanceSensor::cm_type distCM = 0;
+  if (distanceSensor.update(distCM) ) {
     //Serial.print("Dist=");
-    //Serial.println(dist);
+    //Serial.println(distCM);
   }
   floatSwitch.update();
   if (floatSwitch.changed()) {
