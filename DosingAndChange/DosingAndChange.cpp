@@ -284,7 +284,6 @@ void processCommand()
         #if DEBUG_CMD
         Serial.println(F("Error in command\n"));
         #endif
-        cmd->disconnect();
     }
     #if DEBUG_MEM
     MemChecker::log_mem();

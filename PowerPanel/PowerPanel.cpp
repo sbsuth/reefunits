@@ -170,7 +170,6 @@ void processCommand()
         #if DEBUG_CMD
         Serial.println(F("Error in command\n"));
         #endif
-        cmd->disconnect();
     } else {
         #if DEBUG_CONNECT
         if (rf24Parser.stream()->connected()) {Serial.println("Leaving with connection, but incomplete command");}
