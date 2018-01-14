@@ -31,8 +31,6 @@
 // Network objects
 RF24IPInterface rf24( 5, RF24_CE, RF24_CSN, RF24_PA_LOW );
 DEFINE_RF24IPInterface_STATICS;
-RF24EthernetClass   RF24Ethernet( rf24.getRadio(), rf24.getNetwork(), rf24.getMesh() );
-EthernetServer rf24EthernetServer(1000);
 
 // Relay
 unsigned char relayPins[8] = {6, 5, 7, 4, 3, 9, 2, 10};
