@@ -14,6 +14,7 @@ X(  CmdDispense,    "disp", true,   CmdArgInt )
 X(  CmdStepsPerMl,  "cals", true,   CmdArgInt )
 X(  CmdCal,         "calb", true,   CmdArgNone )
 X(  CmdCalRslt,     "calr", true,   CmdArgInt )
+X(  CmdExtPause,    "paus", false,  CmdArgInt )
 X(  CmdNone,        "nop",  false,  CmdArgNone )
 
 #endif
