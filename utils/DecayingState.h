@@ -3,7 +3,7 @@
 
 // Models a setting that must be periodically refresshed to avoid 
 // decaying to a default value.
-template <T> 
+template <typename T> 
 class DecayingState 
 {
   public:
@@ -11,7 +11,7 @@ class DecayingState
         : m_defVal(defVal), m_curVal(defVal), m_decay(t_decay), m_lastRefresh(0)
     {}
 
-    T getCurVal() {
+    T getVal() {
         return m_curVal;
     }
 
@@ -30,6 +30,7 @@ class DecayingState
         bool changed = (v != m_curVal);
         if (changed) {
             m_lastChange = now;
+            m_curVal = v;
         }
         m_lastRefresh = now;
         return (now - m_lastChange);
@@ -37,6 +38,14 @@ class DecayingState
 
     unsigned long timeAtValue() {
         return (millis() - m_lastChange);
+    }
+
+    unsigned long timeAtValueSec() {
+        return (millis() - m_lastChange) / 1000U;
+    }
+
+    void setDecay( unsigned long decay ) {
+        m_decay = decay;
     }
                 
   protected:
