@@ -371,7 +371,10 @@ class ControllablePump
          bool wantOn = (newSpeed > 0);
          m_switch.setWant( wantOn, force );
 
+         #if !DISABLE_PUMP_SWITCH_SYNC
          m_switch.update();
+         #endif 
+
          #endif
     }
             
