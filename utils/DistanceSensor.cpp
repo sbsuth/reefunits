@@ -1,7 +1,8 @@
 #include "DistanceSensor.h"
 
 #define DEAD_AFTER_TIMEOUTS 16
-#define MIN_CHANGE_CM        5
+//#define MIN_CHANGE_CM        5
+#define MIN_CHANGE_CM        100
 #define MIN_CHANGE_MS        (MIN_CHANGE_CM * US_ROUNDTRIP_CM)
 
 #define DEBUG_DISTANCE 0
