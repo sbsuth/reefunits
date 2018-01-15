@@ -2,16 +2,18 @@
 #define DOSING_PUMP_H
 
 #include <DRV8825.h>
+#include "DecayingState.h"
 
 class DosingPump : public DRV8825 {
   public: 
-    DosingPump( int dir, int step, int isleep ) 
+    DosingPump( int dir, int step, int isleep, DecayingState<bool>& extDisable ) 
         : DRV8825( 200, dir, step )
         , m_isleep(isleep)
         , m_disabled(true)
         , m_stepsPerMl(833)
         , m_stepsRemaining(0)
         , m_toDispenseMl(0)
+        , m_extDisable(extDisable)
     {}
     void init( unsigned rpm ) {
         setRPM(rpm);
@@ -24,7 +26,7 @@ class DosingPump : public DRV8825 {
         m_toDispenseMl = 0;
     }
     bool isEnabled() {
-        return (m_disabled == 0);
+        return (m_disabled == 0) && !m_extDisable.getVal();
     }
     void enable() {
         if (m_disabled > 0)
@@ -72,7 +74,7 @@ class DosingPump : public DRV8825 {
 
     // Does a spurt if there's something to do and we're not disabled.
     void update( unsigned char en[] ) {
-        if (!isDispensing() || m_disabled)
+        if (!isDispensing() || !isEnabled())
             return;
         static unsigned long stepsPerIter = 50;
         unsigned short steps;
@@ -120,6 +122,7 @@ class DosingPump : public DRV8825 {
     unsigned long  m_stepsRemaining;
     unsigned short m_toDispenseMl;
     unsigned short m_stepsPerMl;
+    DecayingState<bool>& m_extDisable;
 };
 
 #endif
