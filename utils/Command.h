@@ -400,9 +400,10 @@ class EthernetSerialIO : public InStream
 };
 
 // One file must include this/
-#define DEFINE_RF24IPInterface_STATICS \
+#define DEFINE_RF24IPInterface_STATICS(rf24) \
     RF24IPInterface* RF24IPInterface::m_inst = 0; \
-    EthernetClient EthernetSerialIO::m_client
+    EthernetClient EthernetSerialIO::m_client; \
+    RF24EthernetClass   RF24Ethernet( rf24.getRadio(), rf24.getNetwork(), rf24.getMesh() )
 #endif
 
 
