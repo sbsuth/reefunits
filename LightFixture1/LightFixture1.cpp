@@ -6,10 +6,7 @@
 #include "Avg.h"
 
 #include <SPI.h>
-#include <RF24.h>
-#include <RF24Mesh.h>
-#include <RF24Network.h>
-#include <RF24Ethernet.h>
+#include "RF24Interface.h"
 #include <ArduinoJson.h>
 
 #include "leds.h"
@@ -56,19 +53,15 @@
 // Device status/.
 bool goingUp = false;
 bool goingDown = false;
-AvgThresh<16> liftCurrent(500,495,515);
+AvgThresh<16,int> liftCurrent(500,495,515);
 
 static Switch upButton( UP_BUTTON_IN );
 static Switch downButton( DOWN_BUTTON_IN );
 
 
 // Network objects
-RF24 rf24Radio( RF24_CE, RF24_CSN);
-RF24Network rf24Network(rf24Radio);
-RF24Mesh rf24Mesh(rf24Radio,rf24Network);
-RF24EthernetClass RF24Ethernet(rf24Radio,rf24Network,rf24Mesh);
-IPAddress myIP(10, 10, 2, 4);
-EthernetServer rf24EthernetServer(1000);
+RF24IPInterface rf24( 7, RF24_CE, RF24_CSN, RF24_PA_LOW );
+DEFINE_RF24IPInterface_STATICS(rf24);
 
 // Leds
 Leds leds;
@@ -123,11 +116,7 @@ void setup() {
   downButton.setup();
   
   // Ethernet startup.
-  Ethernet.begin(myIP);
-  rf24Mesh.begin(MESH_DEFAULT_CHANNEL, RF24_1MBPS, 5000);
-  IPAddress gwIP(10, 10, 2, 2);
-  Ethernet.set_gateway(gwIP);
-  rf24EthernetServer.begin();
+  rf24.init();
   
   #if DEBUG_STARTUP
   Serial.println(F("Ready"));
@@ -234,7 +223,7 @@ void updateHeight()
 //static RF24SerialIO rfs( &rf24Network );
 static ArduinoSerialIO sis;
 static CommandParser serialParser( g_commandDescrs, &sis );
-static EthernetSerialIO rfs( &rf24EthernetServer );
+static EthernetSerialIO rfs( &rf24 );
 static CommandParser rf24Parser( g_commandDescrs, &rfs );
 static Command serialCmd;
 static Command rf24Cmd;
@@ -293,7 +282,7 @@ void processCommand()
                 needResp = false;
                 break;
             case CmdRFState:
-                rf24EthernetServer.dumpstate();
+                rf24.getServer().dumpstate();
                 break;
             case CmdDim: {
                 int pct;
@@ -330,29 +319,10 @@ void processCommand()
     }
 }
 
-static uint32_t mesh_timer = 0;
-static void renewMesh()
-{
-    uint32_t now = millis();
-    if ((now - mesh_timer) > 30000) {
-        mesh_timer  = now;
-        if( ! rf24Mesh.checkConnection() ){
-            //refresh the network address
-            rf24Mesh.renewAddress();
-
-            #if DEBUG_CONNECT
-            Serial.print(F("Connection renewal:"));
-            Serial.println( rf24Mesh.checkConnection() );
-            #endif
-        }  else {
-            //Serial.print(F("Connection good."));
-        }
-    }
-}
 
 // the loop function runs over and over again forever
 void loop() {
-  renewMesh();
+  rf24.update();
   upButton.update();
   downButton.update();
   if (upButton.changed() && upButton.isOn()) {
