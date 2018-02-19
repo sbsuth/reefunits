@@ -7,7 +7,11 @@
 #define DEBUG_CMD 0
 #define DEBUG_CONNECT 0
 
-#define RF24_RE_INIT_AFTER_NUM_EMPTY 5
+#define RF24_RE_INIT_AFTER_NUM_EMPTY 2
+// 
+// Set to 1 to enable commands on serial port.  Off to save memory.
+#define SERIAL_COMMANDS 0
+
 
 #include <Arduino.h>
 #include "Switch.h"
@@ -21,22 +25,31 @@
 #include "DistanceSensor.h"
 #include "DecayingState.h"
 
+#define OLD_BOARD 0
 
 #define RF24_CE          9
 #define RF24_CSN         10
 #define TRIG             3
 #define ECHO             4
 #define FLOAT_SW         2
-#define TOP_PUMP         5
-#define BOTTOM_PUMP      6
+#if OLD_BOARD
+#define TOP_PUMP         6
+#define BOTTOM_PUMP      5
+#else
+#define TOP_PUMP         A0 // 18 // A0
+#define BOTTOM_PUMP      A1 // 19 // A1
+#define POND_PUMP_0      5
+#define POND_PUMP_1      6
+#endif
 #define RO_SOLENOID      7
+#define LED              8
 
 
 
 
 // Network objects
 RF24IPInterface rf24( 6, RF24_CE, RF24_CSN, RF24_PA_LOW );
-DEFINE_RF24IPInterface_STATICS;
+DEFINE_RF24IPInterface_STATICS(rf24);
 
 // Ultrasonic
 SingleDistanceSensor distanceSensor( TRIG, ECHO, 40 );
@@ -50,11 +63,24 @@ Switch floatSwitch( FLOAT_SW, LOW );
 // Externally set pump on.
 DecayingState<bool> bottomPumpOn( false, 10*1000UL );
 DecayingState<bool> topPumpOn( false, 10*1000UL );
-DecayingState<bool>* pumpOn[2] = {&topPumpOn, &bottomPumpOn};
-char pumpPins[2] = {TOP_PUMP, BOTTOM_PUMP};
+#if OLD_BOARD
+#define NUM_PUMPS 2
+DecayingState<bool>* pumpOn[NUM_PUMPS] = {&topPumpOn, &bottomPumpOn};
+char pumpPins[NUM_PUMPS] = {TOP_PUMP, BOTTOM_PUMP};
+char pumpAH[NUM_PUMPS] = {false, false};
+#else
+#define NUM_PUMPS 4
+DecayingState<bool> pp0On( false, 10*1000UL );
+DecayingState<bool> pp1On( false, 10*1000UL );
+DecayingState<bool>* pumpOn[4] = {&topPumpOn, &bottomPumpOn, &pp0On, &pp1On};
+char pumpPins[NUM_PUMPS] = {TOP_PUMP, BOTTOM_PUMP, POND_PUMP_0, POND_PUMP_1};
+char pumpAH[NUM_PUMPS] = {false, false, true, true};
+#endif
 
 #define I_TOP 0
 #define I_BOT 1
+#define I_PP_0 2
+#define I_PP_1 3
 
 DecayingState<bool> extPause( false, 5 * 60 * 1000UL );
 
@@ -74,13 +100,16 @@ void setup() {
     #endif
 
 
-    pinMode( TOP_PUMP, OUTPUT );
-    pinMode( BOTTOM_PUMP, OUTPUT );
-    digitalWrite( TOP_PUMP, 1 );
-    digitalWrite( BOTTOM_PUMP, 1 );
+    for (int i=0; i < NUM_PUMPS; i++ ) {
+        pinMode( pumpPins[i], OUTPUT );
+        digitalWrite( pumpPins[i], pumpAH[i]?0:1 );
+    }
 
     digitalWrite( RO_SOLENOID, 0 );
     pinMode( RO_SOLENOID, OUTPUT );
+
+    pinMode( LED, OUTPUT );
+    digitalWrite( LED, 0 );
 
     floatSwitch.setup();
   
@@ -96,8 +125,10 @@ void setup() {
 }
 
 //static RF24SerialIO rfs( &rf24Network );
+#if SERIAL_COMMANDS
 static ArduinoSerialIO sis;
 static CommandParser serialParser( g_commandDescrs, &sis );
+#endif
 static EthernetSerialIO rfs( &rf24 );
 static CommandParser rf24Parser( g_commandDescrs, &rfs );
 static Command serialCmd;
@@ -105,27 +136,31 @@ static Command rf24Cmd;
 
 static void getStatus( Command* cmd )
 {
-    StaticJsonBuffer<148> jsonBuffer;
+    StaticJsonBuffer<180> jsonBuffer;
 
     JsonObject& json = jsonBuffer.createObject();
     json["res_sw"] = floatSwitch.isOn();
     json["res_lev"] = distanceSensor.currentCM();
     json["top_on"] = pumpOn[I_TOP]->getVal() ? pumpOn[I_TOP]->timeAtValueSec() : 0;
     json["bot_on"] = pumpOn[I_BOT]->getVal() ? pumpOn[I_BOT]->timeAtValueSec() : 0;
+    json["tpp0_on"] = pumpOn[I_PP_0]->getVal() ? pumpOn[I_PP_0]->timeAtValueSec() : 0;
+    json["pp1_on"] = pumpOn[I_PP_1]->getVal() ? pumpOn[I_PP_1]->timeAtValueSec() : 0;
     json["ro_mode"] = (int)roMode;
     json["pause"] = extPause.getVal();
     cmd->ack( json );
    /*
-    https://bblanchon.github.io/ArduinoJson/assistant/
+   https://arduinojson.org/assistant/
    {
      "res_sw": true,
      "res_lev": 123,
      "top_on": 1234,
      "bot_on": 1234,
+     "pp0_on": 1234,
+     "pp1_on": 1234,
      "ro_mode": 1,
      "pause": false
     }
-    134
+    178
    */
 }
 
@@ -136,7 +171,7 @@ static void setPumpOn( Command* cmd )
 {
     bool ok = false;
     unsigned long t = 0;
-    if ((cmd->ID() < 2) && !extPause.getVal()) {
+    if ((cmd->ID() < NUM_PUMPS) && !extPause.getVal()) {
         DecayingState<bool>* pump = pumpOn[cmd->ID()];
         t = pump->setVal( true );
         int decay = 0;
@@ -150,39 +185,47 @@ static void setPumpOn( Command* cmd )
         ok = true;
     }
 
-    StaticJsonBuffer<48> jsonBuffer;
+#if 1
+    StaticJsonBuffer<41> jsonBuffer;
     JsonObject& json = jsonBuffer.createObject();
-    json["ton"] = t / 1000U;
+    //json["ton"] = t / 1000U;
+    json["ton"] = t;
     json["ok"] = ok;
     cmd->ack( json );
    /*
-    https://bblanchon.github.io/ArduinoJson/assistant/
+    https://arduinojson.org/assistant/
    {
      "ton": 1234,
      "ok": true,
     }
     41
    */
+#endif
 }
 
 static void updatePumps() 
 {
     bool ep = extPause.getVal();
-    for ( int i=0; i < 2; i++ ) {
+    for ( int i=0; i < NUM_PUMPS; i++ ) {
         DecayingState<bool>* pump = pumpOn[i];
         pump->update();
-        digitalWrite( pumpPins[i], (!ep && pump->getVal()) ? 0 : 1 );
+        int onVal = pumpAH[i] ? 1 : 0;
+        int offVal = pumpAH[i] ? 0 : 1;
+        digitalWrite( pumpPins[i], (!ep && pump->getVal()) ? onVal : offVal );
     }
 }
 
 void processCommand()
 {
 
+    int p = 0;
     bool error = false;
     Command* cmd = 0;
+    #if SERIAL_COMMANDS
     if ( (cmd=serialParser.getCommand( &serialCmd, error )) ) {
-    } else if ((cmd = rf24Parser.getCommand( &rf24Cmd, error )) ) {
-    }
+    } else 
+    #endif
+    cmd = rf24Parser.getCommand( &rf24Cmd, error );
     if (cmd) {
         bool needResp = true;
         #if DEBUG_CMD
@@ -202,8 +245,8 @@ void processCommand()
                 break;
 
             case CmdAllOff:
-                pumpOn[I_TOP]->setVal(false);
-                pumpOn[I_BOT]->setVal(false);
+                for (p=0; p < NUM_PUMPS; p++)
+                    pumpOn[p]->setVal(false);
                 break;
 
             case CmdPumpOn: {
@@ -212,30 +255,26 @@ void processCommand()
                 break;
             }
             case CmdPumpOff: {
-                int p;
                 cmd->arg(0)->getInt(p);
-                if ((p >= 0) && (p < 2)) {
+                if ((p >= 0) && (p < NUM_PUMPS)) {
                     pumpOn[p]->setVal(false);
                 }
                 break;
             }
             case CmdROOn: {
-                int p;
                 cmd->arg(0)->getInt(p);
 
                 roMode = (p ? ROForceOn : ROForceOff);
                 break;
             }
             case CmdFill: {
-                int p;
                 cmd->arg(0)->getInt(p);
                 roMode = (p ? ROKeepFull : ROForceOff);
                 break;
             }
             case CmdExtPause: {
-                int t = 0;
-                cmd->arg(0)->getInt(t);
-                extPause.setDecay(t * 1000UL);
+                cmd->arg(0)->getInt(p);
+                extPause.setDecay(p * 1000UL);
                 extPause.setVal(true);
                 break;
             }
@@ -294,11 +333,13 @@ void loop() {
 
   extPause.update();
 
+  #if 1
   unsigned short dist = 0;
   if (distanceSensor.update(dist) ) {
     //Serial.print("Dist=");
     //Serial.println(dist);
   }
+  #endif
   floatSwitch.update();
   if (floatSwitch.changed()) {
     #if DEBUG_CHANGES
