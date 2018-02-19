@@ -39,7 +39,7 @@ template <int N, typename T>
 class AvgThresh : public Avg<N,T> {
   public:
     AvgThresh( T center, T lowThresh, T highThresh )
-      : Avg<N>( center ), m_lowThresh(lowThresh), m_highThresh(highThresh) {
+      : Avg<N,T>( center ), m_lowThresh(lowThresh), m_highThresh(highThresh) {
 
         // Set limits at 8X the distance from center.
         #define LIM_MUL 8
@@ -47,10 +47,10 @@ class AvgThresh : public Avg<N,T> {
         m_highLimit = center + ((highThresh - center)*LIM_MUL);
     }
     bool isLow() {
-      return (Avg<N>::m_avg < m_lowThresh);
+      return (Avg<N,T>::m_avg < m_lowThresh);
     }
     bool isHigh() {
-      return (Avg<N>::m_avg > m_highThresh);
+      return (Avg<N,T>::m_avg > m_highThresh);
     }
     bool isInRange() {
       return (!isLow() && !isHigh());
@@ -58,9 +58,9 @@ class AvgThresh : public Avg<N,T> {
     T update( T newVal ) {
         // Ignore anything outside limits
         if ((newVal < m_lowLimit) || (newVal > m_highLimit))
-            return Avg<N>::avg();
+            return Avg<N,T>::avg();
         else
-            return Avg<N>::update(newVal);
+            return Avg<N,T>::update(newVal);
     }
     T m_lowLimit;
     T m_highLimit;
