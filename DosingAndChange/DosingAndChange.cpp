@@ -8,7 +8,7 @@
 #define DEBUG_CONNECT 0
 #define DEBUG_MEM 0
 
-#define RF24_RE_INIT_AFTER_NUM_EMPTY 5
+#define RF24_RE_INIT_AFTER_NUM_EMPTY 2
 
 // Set to 1 to enable commands on serial port.
 // Turning this on will probably blow memory, and require turning off something
@@ -185,8 +185,7 @@ void processCommand()
     if ( (cmd=serialParser.getCommand( &serialCmd, error )) ) {
     } else 
     #endif
-    if ((cmd = rf24Parser.getCommand( &rf24Cmd, error )) ) {
-    }
+    cmd = rf24Parser.getCommand( &rf24Cmd, error );
     if (cmd) {
         bool needResp = true;
         #if DEBUG_CMD
