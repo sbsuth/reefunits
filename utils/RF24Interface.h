@@ -40,6 +40,7 @@ class RF24IPInterface
         IPAddress gwIP(10, 10, 2, 2);
         Ethernet.set_gateway(gwIP);
         m_server.begin();
+        pingHeartbeat();
     }
 
     void pingHeartbeat() {
@@ -84,6 +85,8 @@ class RF24IPInterface
                 #endif
                 init();
                 return;
+            } else {
+                m_emptyRefreshes++;
             }
             #endif
             // If 
