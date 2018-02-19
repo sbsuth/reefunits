@@ -36,7 +36,7 @@ class SingleDistanceSensor : public NewPing
     }
     void getEcho();
 
-    Avg<16,value_type> m_values;
+    Avg<8,value_type> m_values;
     unsigned long m_pingStarted;
     bool m_waiting;
     cm_type m_lastAvgCM;
