@@ -209,7 +209,7 @@ static void getPumpStatus( Command* cmd )
     cmd->ack(array);
 
    /*
-    https://bblanchon.github.io/ArduinoJson/assistant/
+    https://arduinojson.org/assistant/
     {"on":false,"mode":1,"cur_speed":0,"top_speed":0,"slow_speed":0,"ramp_sec":1,"hold_sec":10,"ramp_range":0,"hold_range":0,"temp_shutdown":0}
     Copied into an array of 4 of these: 924
    */
