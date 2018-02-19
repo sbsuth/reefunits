@@ -344,11 +344,17 @@ Command* CommandParser::getCommand( Command* cmd, bool& error, unsigned timeout 
 }
 
 #if USE_JSON
+#if 0
 // Header for json response up to point requiring content length.
 static const char json_resp_header[] PROGMEM =
   "HTTP/1.1 200 OK\r\n"
   "Content-Type: application/jsonrequest\r\n"
   "Content-Length: ";
+#else
+// Header for json response up to point requiring content length.
+static const char json_resp_header[] PROGMEM =
+  "Content-Length: ";
+#endif
 #endif
 
 #if USE_RF24
