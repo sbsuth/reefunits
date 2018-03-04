@@ -15,10 +15,13 @@
 // else, like PUMPS
 #define SERIAL_COMMANDS 0
 
+// Enable if using paus cmd.
+#define EXT_PAUSE 0
+
 
 #include <Arduino.h>
 #include "Switch.h"
-//#include "Avg.h"
+#include <EEPROM.h>
 
 #include <ArduinoJson.h>
 #include <DosingPump.h>
@@ -49,8 +52,8 @@
 #define H2OX_DIR        4
 #define H2OX_I_SLEEP    1
 #define H2OX_SLEEP      2
-#define OLD_OUT_STEP    5
-#define NEW_IN_STEP     3
+#define OLD_OUT_STEP    3
+#define NEW_IN_STEP     5
 
 #define CALC_PUMP   0
 #define ALK_PUMP    1
@@ -72,23 +75,35 @@ SingleDistanceSensor distanceSensor( TRIG, ECHO, 80 );
 // Float switch
 Switch floatSwitch( FLOAT_SW, LOW );
 
+#if EXT_PAUSE
 DecayingState<bool> extPause( false, 5 * 60 * 1000UL );
+DecayingState<bool>* extPausePtr = &extPause;
+#else
+DecayingState<bool>* extPausePtr = 0;
+#endif
 
 #define PUMPS 1
 
+#define EE_SIG 123
+#define SIG_EE_ADDR         0
+#define SIG_EE_SIZE         sizeof(unsigned char)
+
+#define PUMP_EE_ADDR        SIG_EE_ADDR + SIG_EE_SIZE
+#define PUMP_EE_ADDR_I(i)   (PUMP_EE_ADDR + (i * DosingPump::ee_size()))
+#define PUMP_EE_SIZE        (NUM_PUMPS*DosingPump::ee_size())
+
 #if PUMPS
 // Dosing pumps
-DosingPump calcPump(  DOSING_DIR,   CALC_STEP,      DOSING_I_SLEEP, extPause);
-DosingPump alkPump(   DOSING_DIR,   ALK_STEP,       DOSING_I_SLEEP, extPause);
-DosingPump magPump(   DOSING_DIR,   MAG_STEP,       DOSING_I_SLEEP, extPause);
-DosingPump oldOutPump(H2OX_DIR,     OLD_OUT_STEP,   H2OX_I_SLEEP,   extPause);
-DosingPump newInPump( H2OX_DIR,     NEW_IN_STEP,    H2OX_I_SLEEP,   extPause);
+DosingPump calcPump(  DOSING_DIR,   CALC_STEP,      DOSING_I_SLEEP, PUMP_EE_ADDR_I(0), extPausePtr);
+DosingPump alkPump(   DOSING_DIR,   ALK_STEP,       DOSING_I_SLEEP, PUMP_EE_ADDR_I(1), extPausePtr);
+DosingPump magPump(   DOSING_DIR,   MAG_STEP,       DOSING_I_SLEEP, PUMP_EE_ADDR_I(2), extPausePtr);
+DosingPump oldOutPump(H2OX_DIR,     OLD_OUT_STEP,   H2OX_I_SLEEP,   PUMP_EE_ADDR_I(3), extPausePtr);
+DosingPump newInPump( H2OX_DIR,     NEW_IN_STEP,    H2OX_I_SLEEP,   PUMP_EE_ADDR_I(4), extPausePtr);
 
 DosingPump* pumps[NUM_PUMPS] = {&calcPump, &alkPump, &magPump, &oldOutPump, &newInPump};
-unsigned short pumpRPM[NUM_PUMPS] = {200, 200, 200, 200, 200};
+//unsigned short pumpRPM[NUM_PUMPS] = {200, 200, 200, 200, 200};
+const unsigned short pumpRPM = 200;
 #endif
-
-// State vars
 
 
 // the setup function runs once when you press reset or power the board
@@ -97,6 +112,12 @@ void setup() {
     #if DEBUG_STARTUP
     Serial.println(F("Start"));
     #endif
+    
+    // Check for current signature to determine if settings should be reset.
+    unsigned char sig = 0;
+    EEPROM.get( SIG_EE_ADDR, sig );
+    bool useSettings = (sig == EE_SIG);
+    EEPROM.put( SIG_EE_ADDR, EE_SIG );
 
     floatSwitch.setup();
   
@@ -106,7 +127,7 @@ void setup() {
 #if PUMPS
     // Init pumps.
     for ( int i=0; i < NUM_PUMPS; i++ ) {
-        pumps[i]->init( pumpRPM[i] );
+        pumps[i]->init( pumpRPM, useSettings );
     }
     pinMode( DOSING_SLEEP, OUTPUT );
     pinMode( H2OX_SLEEP, OUTPUT );
@@ -120,11 +141,19 @@ void setup() {
 #if SERIAL_COMMANDS
 static ArduinoSerialIO sis;
 static CommandParser serialParser( g_commandDescrs, &sis );
+static Command serialCmd;
 #endif
 static EthernetSerialIO rfs( &rf24 );
 static CommandParser rf24Parser( g_commandDescrs, &rfs );
-static Command serialCmd;
 static Command rf24Cmd;
+
+static void saveSettings() {
+    #if PUMPS
+    for ( int ipump=0; ipump < NUM_PUMPS; ipump++ ) {
+        pumps[ipump]->saveSettings();
+    }
+    #endif
+}
 
 static void getStatus( Command* cmd, int ipump )
 {
@@ -149,8 +178,12 @@ static void getStatus( Command* cmd, int ipump )
         #endif
         json["num_active"] = numActive;
         json["num_dis"] = numDisabled;
+        #if EXT_PAUSE
         json["pause"] = extPause.getVal();
-    } else if (ipump < NUM_PUMPS) {
+        #endif
+    } 
+    #if 0
+    else if (ipump < NUM_PUMPS) {
         #if PUMPS
         DosingPump* pump = pumps[ipump];
         json["en"] = pump->isEnabled();
@@ -166,6 +199,7 @@ static void getStatus( Command* cmd, int ipump )
         json["spml"] = 100;
         #endif
     }
+    #endif
     cmd->ack( json );
 
     #if DEBUG_MEM
@@ -204,9 +238,11 @@ void processCommand()
                 getStatus(cmd,-1);
                 break;
 
+            #if 0
             case CmdPumpStatus:
                 getStatus(cmd, cmd->ID());
                 break;
+            #endif
 
             #if PUMPS
             case CmdEnable: {
@@ -265,24 +301,11 @@ void processCommand()
                 Serial.println("ml");
 				#endif
                 pumps[p]->setActualMl(arg);
-                break;
-            }
-            case CmdStepsPerMl: {
-                int p = cmd->ID();
-                if ((p >= NUM_PUMPS) || (p < 0))
-                    break;
-                int steps;
-                cmd->arg(0)->getInt(steps);
-                #if DEBUG_CMD
-				Serial.print("CHANGE: Got step per ml for ");
-				Serial.print(p);
-                Serial.print(" of ");
-                Serial.println(steps);
-				#endif
-                pumps[p]->setStepsPerMl(steps);
+                saveSettings();
                 break;
             }
             #endif
+            #if EXT_PAUSE
             case CmdExtPause: {
                 int t = 0;
                 cmd->arg(0)->getInt(t);
@@ -290,6 +313,11 @@ void processCommand()
                 extPause.setVal(true);
                 break;
             }
+            #endif
+            case CmdSaveSettings:
+                saveSettings();
+                break;
+
             default:
                 #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
@@ -321,7 +349,9 @@ void loop() {
 
   rf24.update();
 
+  #if EXT_PAUSE
   extPause.update();
+  #endif
 
   floatSwitch.update();
   if (floatSwitch.changed()) {
