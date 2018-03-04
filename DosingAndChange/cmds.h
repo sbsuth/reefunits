@@ -11,10 +11,10 @@ X(  CmdPumpStatus,  "pstat", true,  CmdArgNone )
 X(  CmdEnable,      "en",   false,  CmdArgInt )
 X(  CmdResetAll,    "rall", false,  CmdArgNone )
 X(  CmdDispense,    "disp", true,   CmdArgInt )
-X(  CmdStepsPerMl,  "cals", true,   CmdArgInt )
 X(  CmdCal,         "calb", true,   CmdArgNone )
 X(  CmdCalRslt,     "calr", true,   CmdArgInt )
-X(  CmdExtPause,    "paus", false,  CmdArgInt )
+//X(  CmdExtPause,    "paus", false,  CmdArgInt )
+X(  CmdSaveSettings,"sset", false,  CmdArgNone )
 X(  CmdNone,        "nop",  false,  CmdArgNone )
 
 #endif
