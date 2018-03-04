@@ -109,14 +109,6 @@ class RF24IPInterface
                 #endif
             }
         }
-        #if AUTO_RE_INIT_INTERVAL
-        static unsigned long to = AUTO_RE_INIT_INTERVAL;
-        if ((millis() > to) && !m_incoming.connected() && !m_outgoing.connected()) {
-        Serial.println("DOing RF24 init()");
-            to += 30000;
-            init();
-        }
-        #endif
     }
     #if ENABLE_OUTGOING_ETHERNET
     bool sendToRadioClient( unsigned char addr, const char* cmd, unsigned tries=1 )
