@@ -6,17 +6,25 @@
 
 class DosingPump : public DRV8825 {
   public: 
-    DosingPump( int dir, int step, int isleep, DecayingState<bool>& extDisable ) 
+    DosingPump( int dir, int step, int isleep, unsigned confAddr, DecayingState<bool>* extDisable=0 ) 
         : DRV8825( 200, dir, step )
         , m_isleep(isleep)
         , m_disabled(true)
         , m_stepsPerMl(833)
         , m_stepsRemaining(0)
         , m_toDispenseMl(0)
+        , m_confAddr(confAddr)
+        #if EXT_PAUSE
         , m_extDisable(extDisable)
+        #endif
     {}
-    void init( unsigned rpm ) {
+    void init( unsigned rpm, bool useSettings ) {
         setRPM(rpm);
+        if (useSettings) {
+            restoreSettings();
+        } else {
+            saveSettings();
+        }
         setMicrostep(1);
         reset();
     }
@@ -26,7 +34,11 @@ class DosingPump : public DRV8825 {
         m_toDispenseMl = 0;
     }
     bool isEnabled() {
-        return (m_disabled == 0) && !m_extDisable.getVal();
+        #if EXT_PAUSE
+        return (m_disabled == 0) && !m_extDisable->getVal();
+        #else
+        return (m_disabled == 0);
+        #endif
     }
     void enable() {
         if (m_disabled > 0)
@@ -89,7 +101,7 @@ class DosingPump : public DRV8825 {
         unsigned char sleepPin = en[m_isleep];
         if (steps && sleepPin) {
             digitalWrite( sleepPin, 1 );
-            en[m_isleep] = 0;
+            en[m_isleep] = 0; // Indicates it was set.
         }
 
         move(steps);
@@ -115,6 +127,25 @@ class DosingPump : public DRV8825 {
     unsigned short toDispenseMl() {
         return m_toDispenseMl;
     }
+
+    static unsigned ee_size() {
+        return sizeof(m_stepsPerMl);
+    }
+
+    void restoreSettings() {
+        unsigned addr = m_confAddr;
+
+        EEPROM.get( addr, m_stepsPerMl );
+        addr += sizeof(m_stepsPerMl);
+    }
+
+    void saveSettings() {
+        unsigned addr = m_confAddr;
+
+        EEPROM.put( addr, m_stepsPerMl );
+        addr += sizeof(m_stepsPerMl);
+    }
+        
    
   protected:
     unsigned char  m_isleep;
@@ -122,7 +153,10 @@ class DosingPump : public DRV8825 {
     unsigned long  m_stepsRemaining;
     unsigned short m_toDispenseMl;
     unsigned short m_stepsPerMl;
-    DecayingState<bool>& m_extDisable;
+    unsigned       m_confAddr;
+    #if EXT_PAUSE
+    DecayingState<bool>* m_extDisable;
+    #endif
 };
 
 #endif
