@@ -9,9 +9,7 @@
 //#define DEBUG_PUMP 1
 
 // Cause period re-init of RF24 subsystem.
-#define AUTO_RE_INIT_INTERVAL 0
-//#define AUTO_RE_INIT_INTERVAL 030000
-//
+#define RF24_RE_INIT_AFTER_NUM_EMPTY 2
 
 // Setting prevents the periodic outbound cmds sent to the switch
 #define DISABLE_PUMP_SWITCH_SYNC 1
