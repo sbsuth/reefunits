@@ -150,6 +150,8 @@ class ControllablePump
 
         // Calculate a new speed in modes that do that.
         unsigned char minSpeed = (m_minPct ? (((m_minPct+1)*255)/100) : 1); // Never actually switch off.
+        if (m_slowSpeed > minSpeed)
+            minSpeed = m_slowSpeed;
         if (minSpeed > m_topSpeed)
             minSpeed = m_topSpeed;
         unsigned long curTime = millis();
