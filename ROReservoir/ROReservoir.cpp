@@ -32,15 +32,8 @@
 #define TRIG             3
 #define ECHO             4
 #define FLOAT_SW         2
-#if OLD_BOARD
-#define TOP_PUMP         6
-#define BOTTOM_PUMP      5
-#else
-#define TOP_PUMP         A0 // 18 // A0
-#define BOTTOM_PUMP      A1 // 19 // A1
-#define POND_PUMP_0      5
-#define POND_PUMP_1      6
-#endif
+#define FOUNTAIN_PUMPS   6
+#define DOSING_PUMPS     5
 #define RO_SOLENOID      7
 #define LED              8
 
@@ -59,28 +52,19 @@ SingleDistanceSensor distanceSensor( TRIG, ECHO, 40 );
 Switch floatSwitch( FLOAT_SW, LOW );
 
 // State vars
+static int ledOn = 0;
+static unsigned long ledChange = 0;
 
 // Externally set pump on.
-DecayingState<bool> bottomPumpOn( false, 10*1000UL );
-DecayingState<bool> topPumpOn( false, 10*1000UL );
-#if OLD_BOARD
 #define NUM_PUMPS 2
-DecayingState<bool>* pumpOn[NUM_PUMPS] = {&topPumpOn, &bottomPumpOn};
-char pumpPins[NUM_PUMPS] = {TOP_PUMP, BOTTOM_PUMP};
-char pumpAH[NUM_PUMPS] = {false, false};
-#else
-#define NUM_PUMPS 4
-DecayingState<bool> pp0On( false, 10*1000UL );
-DecayingState<bool> pp1On( false, 10*1000UL );
-DecayingState<bool>* pumpOn[4] = {&topPumpOn, &bottomPumpOn, &pp0On, &pp1On};
-char pumpPins[NUM_PUMPS] = {TOP_PUMP, BOTTOM_PUMP, POND_PUMP_0, POND_PUMP_1};
-char pumpAH[NUM_PUMPS] = {false, false, true, true};
-#endif
+DecayingState<bool> fpOn( false, 10*1000UL );
+DecayingState<bool> dpOn( false, 10*1000UL );
+DecayingState<bool>* pumpOn[NUM_PUMPS] = {&fpOn, &dpOn};
+char pumpPins[NUM_PUMPS] = {FOUNTAIN_PUMPS, DOSING_PUMPS};
+char pumpAH[NUM_PUMPS] = {true, true};
 
-#define I_TOP 0
-#define I_BOT 1
-#define I_PP_0 2
-#define I_PP_1 3
+#define I_FP 0
+#define I_DP 1
 
 DecayingState<bool> extPause( false, 5 * 60 * 1000UL );
 
@@ -109,7 +93,7 @@ void setup() {
     pinMode( RO_SOLENOID, OUTPUT );
 
     pinMode( LED, OUTPUT );
-    digitalWrite( LED, 0 );
+    digitalWrite( LED, (ledOn=0) );
 
     floatSwitch.setup();
   
@@ -141,10 +125,8 @@ static void getStatus( Command* cmd )
     JsonObject& json = jsonBuffer.createObject();
     json["res_sw"] = floatSwitch.isOn();
     json["res_lev"] = distanceSensor.currentCM();
-    json["top_on"] = pumpOn[I_TOP]->getVal() ? pumpOn[I_TOP]->timeAtValueSec() : 0;
-    json["bot_on"] = pumpOn[I_BOT]->getVal() ? pumpOn[I_BOT]->timeAtValueSec() : 0;
-    json["tpp0_on"] = pumpOn[I_PP_0]->getVal() ? pumpOn[I_PP_0]->timeAtValueSec() : 0;
-    json["pp1_on"] = pumpOn[I_PP_1]->getVal() ? pumpOn[I_PP_1]->timeAtValueSec() : 0;
+    json["fp_on"] = pumpOn[I_FP]->getVal() ? pumpOn[I_FP]->timeAtValueSec() : 0;
+    json["dp_on"] = pumpOn[I_DP]->getVal() ? pumpOn[I_DP]->timeAtValueSec() : 0;
     json["ro_mode"] = (int)roMode;
     json["pause"] = extPause.getVal();
     cmd->ack( json );
@@ -153,10 +135,8 @@ static void getStatus( Command* cmd )
    {
      "res_sw": true,
      "res_lev": 123,
-     "top_on": 1234,
-     "bot_on": 1234,
-     "pp0_on": 1234,
-     "pp1_on": 1234,
+     "fp_on": 1234,
+     "dp_on": 1234,
      "ro_mode": 1,
      "pause": false
     }
@@ -214,6 +194,16 @@ static void updatePumps()
         digitalWrite( pumpPins[i], (!ep && pump->getVal()) ? onVal : offVal );
     }
 }
+
+static void updateLED()
+{
+    unsigned long now = millis();
+    if ((now - ledChange) > 1000) {
+        ledChange = now;
+        digitalWrite( LED, (ledOn = ledOn?0:1));
+    }
+}
+
 
 void processCommand()
 {
@@ -301,7 +291,7 @@ void processCommand()
 
 
 // Turn on or off the solenoid based on state.
-void updateROOn()
+void updateROOn( int dist )
 {
     int onOff = 0;
 
@@ -315,7 +305,11 @@ void updateROOn()
                 onOff = 1; 
                 break;
             case ROKeepFull: 
-                onOff = !floatSwitch.isOn(); 
+                // Require both float switch not closed, and 
+                // valid distance.  Using both guards against disconnected
+                // float switch (which looks open) and broken/disconnected
+                // distance sensor, which reads 0.
+                onOff = !floatSwitch.isOn() && (dist > 2); 
                 break;
             case ROForceOff: 
             default:
@@ -333,6 +327,8 @@ void loop() {
 
   extPause.update();
 
+  updateLED();
+
   #if 1
   unsigned short dist = 0;
   if (distanceSensor.update(dist) ) {
@@ -349,7 +345,7 @@ void loop() {
   }
   processCommand();
 
-  updateROOn();
+  updateROOn(dist);
   updatePumps();
 }
 
