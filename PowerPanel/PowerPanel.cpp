@@ -36,7 +36,7 @@ DEFINE_RF24IPInterface_STATICS(rf24);
 unsigned char relayPins[8] = {6, 5, 7, 4, 3, 9, 2, 10};
 Relays<8> relays( relayPins, 1 );
 
-#define EE_SIG 123
+#define EE_SIG (unsigned char)123
 
 
 // the setup function runs once when you press reset or power the board

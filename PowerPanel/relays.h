@@ -59,7 +59,8 @@ class Relays
     unsigned saveSettings() {
         unsigned addr = m_confAddr;
         for (unsigned char i=0; i < N; i++ ) {
-            EEPROM.put( addr++, m_on[i] );
+            unsigned char onOff = m_on[i];
+            EEPROM.put( addr++, onOff );
         }
         return addr;
     }
