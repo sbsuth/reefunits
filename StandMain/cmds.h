@@ -2,6 +2,7 @@
 
 #define MAX_ARGS 3
 #define MAX_CMD_LEN 5 // Not including 0.
+#define MAX_STR_ARG_LEN 16
 
 #else
 
@@ -21,6 +22,7 @@ X(  CmdSetTargetTemp,   "stt",  false,  CmdArgFloat,CmdArgInt,  CmdArgFloat )
 X(  CmdCalTemp,         "calt", true,   CmdArgInt,  CmdArgFloat, CmdArgNone )
 X(  CmdRenewRadio,      "rr",   false,  CmdArgNone, CmdArgNone, CmdArgNone )
 X(  CmdCalConsts,       "cc",   false,  CmdArgNone, CmdArgNone, CmdArgNone )
+X(  CmdProbeCmd,        "pc",   true,   CmdArgStr,  CmdArgNone, CmdArgNone )
 X(  CmdNone,            "nop",  false,  CmdArgNone, CmdArgNone, CmdArgNone )
 
 #endif

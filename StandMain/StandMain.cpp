@@ -139,14 +139,14 @@ static Command rf24Cmd;
 
 static void getStatus( Command* cmd )
 {
-    StaticJsonBuffer<330> jsonBuffer;
+    StaticJsonBuffer<340> jsonBuffer;
 
     JsonObject& json = jsonBuffer.createObject();
-    json["pH"] = pH_probe.lastValue();
+    json["pH"] = String(pH_probe.lastValue(),3);
     json["EC"] = EC_probe.lastValue(0);
     json["TDS"] = EC_probe.lastValue(1);
     json["SAL"] = EC_probe.lastValue(2);
-    json["SG"] = EC_probe.lastValue(3);
+    json["SG"] = String(EC_probe.lastValue(3),3);
     json["sump_sw"] = floatSwitch.isOn();
     json["sump_lev"] = distanceSensor.currentCM();
     json["heat"] = tempController.heaterIsOn();
@@ -162,13 +162,13 @@ static void getStatus( Command* cmd )
     json["tsens"] = tempController.getSensitivity();
     cmd->ack( json );
    /*
-    https://bblanchon.github.io/ArduinoJson/assistant/
+    https://arduinojson.org/assistant/
    {
      "pH": 1.23,
-     "EC": 10,
-     "SAL:": 10,
-     "SG": 10,
-     "TDS": 10,
+     "EC": 1.23,
+     "SAL:": 1.23,
+     "SG": 1.23,
+     "TDS": 1.23,
      "sump_sw": true,
      "sump_lev": 123,
      "heat": true,
@@ -181,7 +181,7 @@ static void getStatus( Command* cmd )
      "tper": 10000,
      "tsens": 1.23
    }
-    320
+    328
    */
 }
 
@@ -347,12 +347,14 @@ void processCommand()
                 int step=-1;
                 cmd->arg(0)->getInt(step);
                 cmd->ack( EC_probe.calStep( step ) );
-                    break;
+                respDone = true;
+                break;
             }
             case CmdCalPH: {
                 int step=-1;
                 cmd->arg(0)->getInt(step);
                 cmd->ack( pH_probe.calStep( step ) );
+                respDone = true;
                 break;
             }
             case CmdHeat: {
@@ -379,6 +381,7 @@ void processCommand()
                 cmd->arg(0)->getInt(step);
                 cmd->arg(1)->getFloat(TF);
                 cmd->ack( tempController.calStep( step, cmd->ID(), TF ) );
+                respDone = true;
                 break;
             }
             case CmdRenewRadio:
@@ -387,6 +390,23 @@ void processCommand()
             case CmdCalConsts: 
                 tempController.ackCalConsts( cmd );
                 break;
+            case CmdProbeCmd: {
+                const char* cmdStr;
+                AtlasProbe* probe = 0;
+                if (cmd->arg(0)->getStr(cmdStr)) {
+                    switch (cmd->ID()) {
+                        case 0: probe = &EC_probe; break;
+                        case 1: probe = &pH_probe; break;
+                    }
+                    if (probe) {
+                        String resp;
+                        probe->sendCmd(cmdStr,resp);
+                        cmd->ack( resp );
+                        respDone = true;
+                    }
+                }
+                break;
+            }
             default:
                 #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
