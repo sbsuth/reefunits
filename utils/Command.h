@@ -8,6 +8,10 @@
 #include "cmds.h"
 #undef DEF_CMD_MACROS
 
+#ifndef MAX_STR_ARG_LEN
+#define MAX_STR_ARG_LEN 3
+#endif
+
 #if MAX_ARGS==1
 #define X(a,b,c,d) a,
 #elif MAX_ARGS==2
@@ -82,12 +86,16 @@ class CommandArg {
     }
     void setStr( char* v ) {
         m_kind = CmdArgStr;
-        m_val.s = v;
+        char* ps = &m_val.s[0];
+        char c;
+        for ( int i=0; (i < (MAX_STR_ARG_LEN-1)) && (c=*v++); i++ ) 
+            *ps++ = c;
+        *ps = 0;
         m_set = true;
     }
     bool getStr( const char*& v ) {
         if (m_kind == CmdArgStr) {
-            v = m_val.s;
+            v = &m_val.s[0];
             return true;
         } else {
             return false;
@@ -99,7 +107,7 @@ class CommandArg {
     union {
         int     i;
         float   f;
-        char*   s;
+        char    s[MAX_STR_ARG_LEN];
     }   m_val;
 };
 
@@ -165,6 +173,7 @@ class Command {
     void ack( int val );
     void ack( float val );
     void ack( const char* val );
+    void ack( const String& str );
   protected:
     CommandKind m_kind;
     short       m_id;

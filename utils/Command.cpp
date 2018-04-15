@@ -563,4 +563,13 @@ void Command::ack( const char* val )
     ack( json );
     #endif
 }
+void Command::ack( const String& val )
+{
+    #if USE_JSON
+    StaticJsonBuffer<200> jsonBuffer;
+    JsonObject& json = jsonBuffer.createObject();
+    json["value"] = val;
+    ack( json );
+    #endif
+}
 #endif
