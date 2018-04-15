@@ -5,8 +5,6 @@
 #include "RF24Interface.h"
 #include "RemoteSetting.h"
 
-#define USE_REMOTE_SETTABLE 1
-
 class ControllablePump
 {
   public:
@@ -17,9 +15,7 @@ class ControllablePump
       , m_rampOffset(0), m_holdOffset(0)
       , m_lastChangeTime(0), m_tempShutoffUntil(0), m_upDown(0), m_retries(0)
       , m_rf24(rf24)
-      #if USE_REMOTE_SETTABLE
       , m_switch(this)
-      #endif
     {}
 
     enum Mode {
@@ -29,7 +25,8 @@ class ControllablePump
         Ramp     = 3,
         Off      = 4,
         Test     = 5,
-        NumModes = 6
+        SinWave      = 6,
+        NumModes = 7
     };
 
     //static const unsigned ReassertSwitchInterval = 10 * 1000;
@@ -159,6 +156,7 @@ class ControllablePump
         unsigned rampMsec = m_rampSec*1000;
         bool updateOffset = false;
         bool updateSwitch = false;
+        unsigned long elapsedTime = (curTime - m_lastChangeTime);
 
         if (inTempShutdown()) {
             if (curTime > m_tempShutoffUntil) {
@@ -172,7 +170,7 @@ class ControllablePump
         if (!inTempShutdown()) {
             switch (m_mode) {
                 case Square: {
-                    if ((curTime - m_lastChangeTime) > (holdMsec + m_holdOffset)) {
+                    if (elapsedTime > (holdMsec + m_holdOffset)) {
                         if (m_upDown > 0) {
                             m_upDown = -1;
                             newSpeed = minSpeed;
@@ -182,65 +180,73 @@ class ControllablePump
                         }
                         updateOffset = true;
                         updateSwitch = true;
-                        #if DEBUG_PUMP
-                        Serial.print("PUMP: ");Serial.print(m_swAddr);
-                        Serial.print(": change at:");Serial.print(curTime);
-                        Serial.print(", m_lastChangeTime=");Serial.print(m_lastChangeTime);
-                        Serial.print(", m_holdSec=");Serial.print((int)m_holdSec);
-                        Serial.print(", m_holdOffset=");Serial.print((int)m_holdOffset);
-                        Serial.print(", inShutdown=");Serial.print(m_tempShutoffUntil);
-                        Serial.println("");
-                        #endif
-                    } else {
-                        updateSwitch = calcReassertSwitch( curTime );
+                        debugPrintPumpState();
                     }
                     break;
                 }
                 case Ramp: {
+                    unsigned long speedRange = (m_topSpeed - minSpeed);
                     if (m_upDown == 0) {
-                        if ((curTime - m_lastChangeTime) > (holdMsec + m_holdOffset)) {
-                            m_upDown = (m_curSpeed > ((m_topSpeed-minSpeed)/2)) ? -1 : 1;
+                        if (elapsedTime > (holdMsec + m_holdOffset)) {
+                            m_upDown = (m_curSpeed > (speedRange/2)) ? -1 : 1;
                             m_lastChangeTime = curTime;
                             updateOffset = true;
                             updateSwitch = true;
-                            #if DEBUG_PUMP
-                            Serial.print("PUMP: ");Serial.print(m_swAddr);
-                            Serial.print(": change at:");Serial.print(curTime);
-                            Serial.print(", m_lastChangeTime=");Serial.print(m_lastChangeTime);
-                            Serial.print(", m_holdSec=");Serial.print((int)m_holdSec);
-                            Serial.print(", m_holdOffset=");Serial.print((int)m_holdOffset);
-                            Serial.print(", m_rampSec=");Serial.print((int)m_rampSec);
-                            Serial.print(", m_rampOffset=");Serial.print((int)m_rampOffset);
-                            Serial.print(", inShutdown=");Serial.print(m_tempShutoffUntil);
-                            Serial.println("");
-                            #endif
+                            debugPrintPumpState();
                         }
-                    } else {
-                        unsigned long delta = ((unsigned long)(m_topSpeed - minSpeed) * (curTime - m_lastChangeTime))
-                                                / (rampMsec+m_rampOffset); // ZERO DENOM!
-                        if (delta) {
+                    } else if (elapsedTime > 250) { // Avoid unnecessary calculation.
+
+                        unsigned long speedChange = ((unsigned long)speedRange * elapsedTime)
+                                                      / (rampMsec + m_rampOffset); // ZERO DENOM!
+                        if (speedChange) {
                             if (m_upDown > 0) {
-                                newSpeed = m_curSpeed + delta;
+                                newSpeed = m_curSpeed + speedChange;
                                 if (newSpeed > m_topSpeed)
                                     newSpeed = m_topSpeed;
-                            } else if (delta < m_curSpeed) {
-                                newSpeed = m_curSpeed - delta;
+                            } else {
+                                newSpeed = m_curSpeed - speedChange;
                                 if (newSpeed < minSpeed)
                                     newSpeed = minSpeed;
-                            } else {
-                                newSpeed = minSpeed;
                             }
                             if ((newSpeed==minSpeed) || (newSpeed==m_topSpeed))
                                 m_upDown = 0;
                         }
-                        updateSwitch = calcReassertSwitch( curTime );
+                    }
+                    break;
+                }
+                case SinWave: {
+                    if (elapsedTime < 250) // Avoid unnecessary calculation.
+                        break; 
+
+                    float speedRange = (m_topSpeed - minSpeed);
+                    unsigned long period = (2 * (rampMsec + m_rampOffset));
+                    unsigned long tOffset = curTime % period;
+                    float radians = ((float)tOffset / (float)period) * 6.283;
+                    float speed = ((sin(radians) + 1.0) * (speedRange/2.0)) + (float)minSpeed;
+                    unsigned newSpeed = (int)(speed + 0.5);
+
+                    if (newSpeed > m_topSpeed) {
+                        newSpeed = m_topSpeed;
+                    } else if (newSpeed < minSpeed) {
+                        newSpeed = minSpeed;
+                    }
+                    if (newSpeed != m_curSpeed) {
+                        m_lastChangeTime = curTime;
+                        if ((newSpeed < m_curSpeed) && (m_upDown > 0)) {
+                            m_upDown = -1;
+                            updateOffset = true;
+                            updateSwitch = true;
+                        } else if ((newSpeed > m_curSpeed) && (m_upDown <= 0)) {
+                            m_upDown = 1;
+                            updateOffset = true;
+                            updateSwitch = true;
+                        }
                     }
                     break;
                 }
                 case Slow:
                 case Constant:
                     newSpeed = (m_mode == Slow) ? m_slowSpeed : m_topSpeed;
-                    updateSwitch = calcReassertSwitch( curTime );
                     break;
                 case Test:
                     // Turn off, but don't auto-switch
@@ -249,7 +255,6 @@ class ControllablePump
                 case Off:
                     // Leave other settings in tact, but go to 0.
                     newSpeed = 0;
-                    updateSwitch = calcReassertSwitch( curTime );
                     break;
                 default:
                     newSpeed = m_topSpeed;
@@ -257,7 +262,6 @@ class ControllablePump
         } else {
             // Temp shutdown.
             newSpeed = 0;
-            updateSwitch |= calcReassertSwitch( curTime );
         }
 
         // If changing, update random offsets if set.
@@ -276,6 +280,20 @@ class ControllablePump
 
         m_curSpeed = newSpeed;
         analogWrite( m_pin, m_curSpeed );
+    }
+
+    void debugPrintPumpState() {
+        #if DEBUG_PUMP
+        Serial.print("PUMP: ");Serial.print(m_swAddr);
+        Serial.print(": change at:");Serial.print(millis());
+        Serial.print(", m_lastChangeTime=");Serial.print(m_lastChangeTime);
+        Serial.print(", m_holdSec=");Serial.print((int)m_holdSec);
+        Serial.print(", m_holdOffset=");Serial.print((int)m_holdOffset);
+        Serial.print(", m_rampSec=");Serial.print((int)m_rampSec);
+        Serial.print(", m_rampOffset=");Serial.print((int)m_rampOffset);
+        Serial.print(", inShutdown=");Serial.print(m_tempShutoffUntil);
+        Serial.println("");
+        #endif
     }
 
     bool inTempShutdown() {
@@ -301,25 +319,6 @@ class ControllablePump
         #endif
     }
                     
-    // Periodically force a switch update.
-    // Skew delays between checks by pin of device so they don't all happen together.
-    bool calcReassertSwitch( unsigned long curTime ) {
-        #if !USE_REMOTE_SETTABLE
-        // Never reassert if in Test mode.
-        if (m_mode == Test)
-            return false;
-        if ((curTime - m_lastChangeTime) > (ReassertSwitchInterval + (m_swAddr * 1000))) {
-            m_lastChangeTime = curTime;
-            return true;
-        } else {
-            return false;
-        }
-        #else
-        // Rely on RemoteSettable.
-        return false;
-        #endif
-    }
-
      static int calcRandom( unsigned int sec, unsigned int range ) {
         if (range == 0)
             return 0;
@@ -335,49 +334,12 @@ class ControllablePump
      // If going from or to 0, turn on or off the switch.
      // Also force an "on" if force is set.
      void syncSwitch( unsigned char newSpeed, bool force ) {
-     #if !USE_REMOTE_SETTABLE
-         char cmd[8];
-         char* np;
-         // If we're retrying, auto-force.
-         bool is_retry = false;
-         if (m_retries > 0) {
-            m_retries--;
-            force = true;
-            is_retry = true;
-        }
-         bool needOn = false;
-         bool success = false;
-         bool changed = (newSpeed != m_curSpeed);
-         if (changed || force) {
-             if (newSpeed == 0) {
-                 strcpy( cmd, "off " );
-             } else if ((m_curSpeed == 0) || force) {
-                 strcpy( cmd, "on " );
-             } else {
-                 cmd[0] = 0;
-             }
-             if (cmd[0]) {
-                 char* pc = &cmd[0];
-                 while (*pc) pc++;
-                 *pc++ = '0' + m_swAddr;
-                 *pc++ = '\n';
-                 *pc++ = 0;
-                 unsigned long tstart = millis();
-                 if (!m_rf24.sendToRadioClient( 5, cmd, 3 ) && !m_retries && !is_retry) {
-                    // Initiate a set of retries on next update.
-                    m_retries = 5;
-                 }
-             }
-         }
-         #else
          bool wantOn = (newSpeed > 0);
          m_switch.setWant( wantOn, force );
 
          #if !DISABLE_PUMP_SWITCH_SYNC
          m_switch.update();
          #endif 
-
-         #endif
     }
             
 
@@ -487,9 +449,7 @@ class ControllablePump
       protected:
         ControllablePump*   m_pump;
     };
-    #if USE_REMOTE_SETTABLE
     SwitchSettable  m_switch;
-    #endif
 };
 
 int ControllablePump::m_rand __attribute__((weak)) = 12345;
