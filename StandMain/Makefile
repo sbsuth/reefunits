@@ -3,7 +3,7 @@ USE_RF24 =1
 USE_PING =1
 MCU :=atmega2560
 ARDUINO_VERSION := 10607
-PORT := COM10
+PORT := COM3
 
 include ../utils/Makefile.arduino
 
@@ -15,3 +15,4 @@ Command.o : cmds.h ../utils/ControllablePump.h ../utils/RemoteSetting.h
 TempController.o: TempController.h
 
 -include Makefile.d
+
