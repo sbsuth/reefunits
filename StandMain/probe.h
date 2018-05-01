@@ -1,11 +1,13 @@
 #ifndef PROBE_H
 #define PROBE_H 1
 
+#include "TempController.h"
+
 class AtlasProbe
 {
   public:
-    AtlasProbe( HardwareSerial& serial )
-        : m_serial(serial)
+    AtlasProbe( HardwareSerial& serial, TempController& tc )
+        : m_serial(serial), m_tc(tc), m_lastTC(0)
     {
     }
 
@@ -38,8 +40,20 @@ class AtlasProbe
         if (!done) 
             resp = "Timed out!";
     }
+    void sendCmd( const String& cmd, String& resp ) {
+        sendCmd( cmd.c_str(), resp );
+    }
 
     bool update() {
+        // Update temp compensation once per minute.
+        if ((millis() - m_lastTC) > (60UL*1000UL)) {
+            String cmd("T,");
+            cmd.concat( TempController::f2c(m_tc.curTemp()));
+            String rslt;
+            sendCmd(cmd,rslt);
+            m_lastTC = millis();
+        }
+
         if (m_serial.available()) {
             m_buf = m_serial.readStringUntil(13);        
             return true;
@@ -72,13 +86,15 @@ class AtlasProbe
   protected:
     HardwareSerial& m_serial;
     String  m_buf;
+    TempController& m_tc;
+    unsigned long m_lastTC;
 };
 
 class pHProbe : public AtlasProbe
 {
   public:
-    pHProbe( HardwareSerial& serial )
-        : AtlasProbe(serial)
+    pHProbe( HardwareSerial& serial, TempController& tc )
+        : AtlasProbe(serial,tc)
         , m_lastValue(0.0)
     {}
 
@@ -128,8 +144,8 @@ class pHProbe : public AtlasProbe
 class ConductivityProbe : public AtlasProbe
 {
   public:
-    ConductivityProbe( HardwareSerial& serial )
-        : AtlasProbe(serial)
+    ConductivityProbe( HardwareSerial& serial, TempController& tc )
+        : AtlasProbe(serial,tc)
     {
         for ( int i=0; i < 4; i++ )
             m_lastValues[i] = 0.0;

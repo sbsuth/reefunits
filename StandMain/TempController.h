@@ -28,22 +28,7 @@ class TempController
     }
     unsigned long timeSinceLastOnOff();
 
-    float curTemp( int itherm=-1 ) {
-        if ((itherm >= 0) && (itherm < 2)) {
-            if (isCalibrated(itherm))
-                return m_tempValue[itherm].avg();
-            else
-                return 0.0;
-        } else if (isCalibrated()) {
-            return (m_tempValue[0].avg() + m_tempValue[1].avg())/2.0;
-        } else if (isCalibrated(0)) {
-            return curTemp(0);
-        } else if (isCalibrated(1)) {
-            return curTemp(0);
-        } else {
-            return 0.0;
-        }
-    }
+    float curTemp( int itherm=-1 );
 
     unsigned char pinFor( unsigned itherm ) {
         if (itherm < 2)
@@ -78,6 +63,9 @@ class TempController
     }
     static float f2k( double F ) {
         return 273.15 + ((F - 32)*.5556);
+    }
+    static float f2c( double F ) {
+        return ((F - 32)*.5556);
     }
     float calcTemp( float R, unsigned itherm );
     void calcOnOff();

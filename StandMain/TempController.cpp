@@ -66,13 +66,19 @@ bool TempController::update()
             unsigned adc = analogRead( pinFor(m_lastSampledProbe) );
             float R = adc2R(adc);
             float TF = calcTemp( R, m_lastSampledProbe );
+            // We can get some seriously wacky values.
+            // Reject those that are 2 degrees away from the average if full.
             #if DEBUG_TEMP
             Serial.print("TEMP: ");Serial.print(m_lastSampledProbe);Serial.print(": adc=");Serial.print(adc);
             Serial.print(", R=");Serial.print(R);
             Serial.print(", TF=");Serial.print(TF);
             Serial.println("");
             #endif
-            m_tempValue[m_lastSampledProbe].update(TF);
+            Avg<32,float>& tv = m_tempValue[m_lastSampledProbe];
+            float diff = tv.avg() - TF;
+            if (!tv.isFull() || ((diff < 2.0) && (diff > -2.0))) {
+                tv.update(TF);
+            }
 
             // Set heater on/off based on current temps.
             calcOnOff();
@@ -314,4 +320,20 @@ void TempController::ackCalConsts( Command* cmd )
    }
     142
    */
+}
+float TempController::curTemp( int itherm ) {
+    if ((itherm >= 0) && (itherm < 2)) {
+        if (isCalibrated(itherm))
+            return m_tempValue[itherm].avg();
+        else
+            return 0.0;
+    } else if (isCalibrated()) {
+        return (m_tempValue[0].avg() + m_tempValue[1].avg())/2.0;
+    } else if (isCalibrated(0)) {
+        return curTemp(0);
+    } else if (isCalibrated(1)) {
+        return curTemp(0);
+    } else {
+        return 0.0;
+    }
 }

@@ -76,10 +76,10 @@ ControllablePump ph2(      7,   1,      0,  PUMP_EE_ADDR_I(3), rf24 );
 
 ControllablePump* pumps[NPUMPS] = {&mainCirc,  &skimmer, &ph1, &ph2 };
 
-pHProbe pH_probe( Serial3 );
-ConductivityProbe EC_probe( Serial2 );
-
 TempController tempController( HEAT_ON, SUMP_TEMP, DISPLAY_TEMP, T_CTRL_EE_ADDR );
+
+pHProbe pH_probe( Serial3, tempController );
+ConductivityProbe EC_probe( Serial2, tempController );
 
 
 // State vars
