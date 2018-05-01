@@ -119,7 +119,7 @@ INSTALL_PATH := /opt/arduino-1.8.5
 CORE := $(INSTALL_PATH)/hardware/arduino/avr/cores/arduino
 PORT := /dev/tty.usbserial*
 else
-INSTALL_PATH := ${HOME}/Arduino
+INSTALL_PATH := c:/arduino-1.8.5
 CORE := $(INSTALL_PATH)/hardware/arduino/avr/cores/arduino
 ifeq ($(PORT),)
 PORT := \\.\COM3
