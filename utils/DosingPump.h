@@ -10,7 +10,7 @@ class DosingPump : public DRV8825 {
         : DRV8825( 200, dir, step )
         , m_isleep(isleep)
         , m_disabled(true)
-        , m_stepsPerMl(833)
+        , m_stepsPerMl(250)
         , m_stepsRemaining(0)
         , m_toDispenseMl(0)
         , m_confAddr(confAddr)
