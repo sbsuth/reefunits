@@ -314,18 +314,23 @@ void processCommand()
                 break;
             }
             case CmdTempShutdown: {
-                int ipump = cmd->ID(); // -1 if all pumps.
-                if (ipump >= NPUMPS) 
-                    break;
                 int secs;
+                ControllablePump::ShutdownKind kinds[2] = {ControllablePump::ShutdownUnset,ControllablePump::ShutdownUnset};
                 cmd->arg(0)->getInt(secs);
-                for (int i=0; i < NPUMPS; i++) {
-                    if ((ipump < 0) || (ipump == i)) {
-                        if (secs > 0) 
-                            pumps[i]->setTempShutoffInterval( secs ); 
-                        else
-                            pumps[i]->cancelTempShutoff();
+                if (secs <= 0) {
+                    kinds[0] = kinds[1] = ControllablePump::ShutdownCancel;
+                } else {
+                    int kind;
+                    if (cmd->arg(1)->getInt(kind) && (kind > 0) && (kind < ControllablePump::NumShutdowns)) {
+                        kinds[0] = (ControllablePump::ShutdownKind)kind;
                     }
+                    if (cmd->arg(2)->getInt(kind) && (kind > 0) && (kind < ControllablePump::NumShutdowns)) {
+                        kinds[1] = (ControllablePump::ShutdownKind)kind;
+                    }
+                }
+                for (int i=0; i < NPUMPS; i++) {
+                    ControllablePump::ShutdownKind kind = kinds[i/2]; // 0&1 are rtn & skimmer, 2&3 are PHs.
+                    pumps[i]->setTempShutoff( secs, kind );
                 }
                 break;
             }

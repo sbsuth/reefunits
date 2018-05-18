@@ -13,7 +13,8 @@ class ControllablePump
       , m_curSpeed(0), m_topSpeed(0), m_slowSpeed(0), m_mode(Off)
       , m_rampSec(5), m_holdSec(30), m_rampRangeMs(0), m_holdRangeMs(0)
       , m_rampOffset(0), m_holdOffset(0)
-      , m_lastChangeTime(0), m_tempShutoffUntil(0), m_upDown(0), m_retries(0)
+      , m_lastChangeTime(0), m_lastWriteTime(0), m_tempShutoffUntil(0), m_tempShutoffMode(ShutdownUnset)
+      , m_upDown(0), m_retries(0)
       , m_rf24(rf24)
       , m_switch(this)
     {}
@@ -25,8 +26,16 @@ class ControllablePump
         Ramp     = 3,
         Off      = 4,
         Test     = 5,
-        SinWave      = 6,
+        SinWave  = 6,
         NumModes = 7
+    };
+
+    enum ShutdownKind {
+        ShutdownUnset   = 0,
+        ShutdownCancel  = 1,
+        ShutdownOff     = 2,
+        ShutdownSlow    = 3,
+        NumShutdowns    = 4
     };
 
     //static const unsigned ReassertSwitchInterval = 10 * 1000;
@@ -161,6 +170,7 @@ class ControllablePump
         if (inTempShutdown()) {
             if (curTime > m_tempShutoffUntil) {
                 m_tempShutoffUntil = 0;
+                m_tempShutoffMode = ShutdownUnset;
                 #if DEBUG_PUMP
                 Serial.print("Temp shutdown has expired at ");Serial.println(curTime);
                 #endif
@@ -261,7 +271,15 @@ class ControllablePump
             }
         } else {
             // Temp shutdown.
-            newSpeed = 0;
+            switch (m_tempShutoffMode) {
+                case ShutdownSlow:
+                    newSpeed = m_slowSpeed;
+                    break;
+                case ShutdownOff:
+                default:
+                    newSpeed = 0;
+                    break;
+            }
         }
 
         // If changing, update random offsets if set.
@@ -272,14 +290,17 @@ class ControllablePump
 
         syncSwitch( newSpeed, updateSwitch);
 
-        // Nothing to do if no change.
-        if (newSpeed == m_curSpeed)
-            return;
-
-        m_lastChangeTime = curTime;
+        bool speedChanged = (newSpeed != m_curSpeed);
+        if (speedChanged)
+            m_lastChangeTime = curTime;
 
         m_curSpeed = newSpeed;
-        analogWrite( m_pin, m_curSpeed );
+
+        // Write the speed if its changed, or every 10 seconds.
+        if (speedChanged || ((curTime - m_lastWriteTime) > (10 * 1000))) {
+            analogWrite( m_pin, m_curSpeed );
+            m_lastWriteTime = curTime;
+        }
     }
 
     void debugPrintPumpState() {
@@ -297,7 +318,13 @@ class ControllablePump
     }
 
     bool inTempShutdown() {
-        return m_tempShutoffUntil;
+        switch (m_tempShutoffMode) {
+            case ShutdownSlow:
+            case ShutdownOff:
+                return m_tempShutoffUntil;
+            default:
+                return false;
+        }
     }
     unsigned long tempShutdownRemainingSec() {
         if (inTempShutdown())
@@ -314,9 +341,25 @@ class ControllablePump
 
     void cancelTempShutoff() {
         m_tempShutoffUntil = 0;
+        m_tempShutoffMode = ShutdownUnset;
         #if DEBUG_PUMP
         Serial.println("Cancelling shutdown");
         #endif
+    }
+
+    void setTempShutoff( int secs, ShutdownKind kind ) {
+        switch (kind) {
+            case ShutdownCancel:
+                cancelTempShutoff();
+                break;
+            case ShutdownOff:
+            case ShutdownSlow:
+                setTempShutoffInterval(secs);
+                m_tempShutoffMode = kind;
+                break;
+            default:
+                break;
+        }
     }
                     
      static int calcRandom( unsigned int sec, unsigned int range ) {
@@ -414,7 +457,9 @@ class ControllablePump
     int           m_rampOffset;
     int           m_holdOffset;
     unsigned long m_lastChangeTime;
+    unsigned long m_lastWriteTime;
     unsigned long m_tempShutoffUntil;
+    ShutdownKind  m_tempShutoffMode;
     char          m_upDown;
     unsigned char m_retries;
     static int    m_rand;
