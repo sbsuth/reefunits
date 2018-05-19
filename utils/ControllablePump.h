@@ -332,10 +332,10 @@ class ControllablePump
         else
             return 0;
     }
-    void setTempShutoffInterval( unsigned tsec ) {
-        m_tempShutoffUntil = millis() + (tsec * 1000);
+    void setTempShutoffInterval( unsigned long tsec ) {
+        m_tempShutoffUntil = millis() + (tsec * 1000UL);
         #if DEBUG_PUMP
-        Serial.println("Setting shutdown with end time ");Serial.println(m_tempShutoffUntil);
+        Serial.print("At ");Serial.print(millis());Serial.print(", setting shutdown with end time ");Serial.println(m_tempShutoffUntil);
         #endif
     }
 
@@ -347,7 +347,7 @@ class ControllablePump
         #endif
     }
 
-    void setTempShutoff( int secs, ShutdownKind kind ) {
+    void setTempShutoff( unsigned long secs, ShutdownKind kind ) {
         switch (kind) {
             case ShutdownCancel:
                 cancelTempShutoff();
