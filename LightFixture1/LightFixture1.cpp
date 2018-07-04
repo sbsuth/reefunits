@@ -5,6 +5,7 @@
 #include "Switch.h"
 #include "Avg.h"
 
+#include <EEPROM.h>
 #include <SPI.h>
 #include "RF24Interface.h"
 #include <ArduinoJson.h>
@@ -48,6 +49,7 @@
 //#define DEBUG_CMD 1
 //#define DEBUG_CONNECT 1
 
+#define LED_EE_ADDR 16
 
 
 // Device status/.
@@ -64,7 +66,9 @@ RF24IPInterface rf24( 7, RF24_CE, RF24_CSN, RF24_PA_LOW );
 DEFINE_RF24IPInterface_STATICS(rf24);
 
 // Leds
-Leds leds;
+Leds leds(LED_EE_ADDR);
+
+#define EE_SIG (unsigned char)123
 
 // Set the prescale values on the timers:
 // Avoid doing timer 0.
@@ -94,6 +98,25 @@ void setupTimers()
     PRESCALE_TIMER( 4, iScale );
 }
 
+static void saveSettings()
+{
+    EEPROM.put( (char)0, EE_SIG );
+    leds.saveSettings();
+}
+
+static bool restoreSettings()
+{
+    unsigned char sig = 0;
+    EEPROM.get( 0, sig );
+    if (sig == EE_SIG) {
+        leds.restoreSettings();
+        return true;
+    } else {
+        return false;
+    }
+}
+
+
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -109,7 +132,11 @@ void setup() {
   pinMode( SPEED_PWM, OUTPUT);
   pinMode( CURRENT_LED_OUT, OUTPUT);
 
+
   leds.init();
+
+  if (!restoreSettings())
+    saveSettings();
 
   // Do these after network.being() to avoid mysterious interference....
   upButton.setup();
@@ -241,6 +268,93 @@ static void getHeightCmd( Command* cmd )
     cmd->ack( json );
 }
 
+static void getStatus( Command* cmd )
+{
+    StaticJsonBuffer<300> jsonBuffer;
+
+    JsonObject& json = jsonBuffer.createObject();
+    json["height"] = curHeight / 1000;
+    json["moving"] = (int)((goingUp || goingDown) ? 1 : 0);
+    json["lat"] = leds.getLatitude();
+    json["lon"] = leds.getLongitude();
+    json["tz"] = leds.getTimezone();
+    json["high_pct"] = leds.getHighPct();
+    json["low_pct"] = leds.getLowPct();
+    json["timed_pct"] = leds.getTimedPct();
+    json["mode"] = (int)leds.getMode();
+    json["spec"] = leds.getCurSpectrum();
+    json["sun_angle"] = leds.getSunAngle();
+    json["am_factor"] = leds.getAMFactor();
+    json["offset_sec"] = leds.getOffsetSec();
+    cmd->ack( json );
+    #if 0
+    https://arduinojson.org/v5/assistant/
+    277
+    {
+      "height":123,
+      "moving":true,
+      "lat": 1.234,
+      "lon": 1.234,
+      "tz": -8,
+      "high_pct": 47,
+      "low_pct": 47,
+      "timed_pct": 58,
+      "mode": 0,
+      "spec": 0,
+      "sun_angle": 45.87,
+      "am_factor": 0.78,
+      "offset_sec": 0
+    }
+    #endif
+}
+
+static void getCurVals( Command* cmd )
+{
+    StaticJsonBuffer<128> jsonBuffer;
+
+    JsonObject& json = jsonBuffer.createObject();
+    JsonArray& cur = json.createNestedArray("cur_pct");
+    for (unsigned char iled=0; iled < NUM_LED_NUMS; iled++ ) {
+        if ( leds.ledIndexUsed(iled)) {
+            cur.add( leds.getCurVal(iled) );
+        }
+    }
+    cmd->ack( json );
+
+    #if 0
+    https://arduinojson.org/v5/assistant/
+    110
+    {
+      "cur_pct":[123,123,123,123,234,234,123],
+    }
+    #endif
+
+}
+
+static void getMaxPcts( Command* cmd, unsigned spec )
+{
+    StaticJsonBuffer<128> jsonBuffer;
+
+    JsonObject& json = jsonBuffer.createObject();
+    JsonArray& max = json.createNestedArray("max_pct");
+    for (unsigned char iled=0; iled < NUM_LED_NUMS; iled++ ) {
+        if ( leds.ledIndexUsed(iled)) {
+            max.add( leds.getLedPct(spec,iled) );
+        }
+    }
+    cmd->ack( json );
+
+    #if 0
+    https://arduinojson.org/v5/assistant/
+    110
+    {
+      "max_pct":[123,123,123,123,234,234,123]
+    }
+    #endif
+
+}
+
+
 void processCommand()
 {
 
@@ -287,18 +401,108 @@ void processCommand()
             case CmdDim: {
                 int pct;
                 if (cmd->arg(0)->getInt(pct)) {
-                    #if 1
+                    leds.setMode( Leds::External );
                     leds.dimAll(pct);
-                    #else
-                    //leds.dimOne(WHITE_LED,pct);
-                    leds.dimOne(VIOLET_LED,pct);
-                    //leds.dimOne(ROYAL_BLUE_LED,pct);
-                    //leds.dimOne(BLUE_LED,pct);
-                    //leds.dimOne(CYAN_LED,pct);
-                    //leds.dimOne(RED_LED ,pct);
-                    //leds.dimOne(AMBER_LED,pct);
-                    #endif
                 }
+                break;
+            }
+            case CmdSetLoc: {
+                // Latitude, longitude, timezone.
+                float l;
+                int tz;
+                if (cmd->arg(0)->getFloat(l))
+                    leds.setLatitude(l);
+                if (cmd->arg(1)->getFloat(l))
+                    leds.setLongitude(l);
+                if (cmd->arg(2)->getInt(tz))
+                    leds.setTimezone(tz);
+
+                leds.invalidate();
+                break;
+            }
+
+            case CmdSetTime: {
+                // Read 32-bit unsigned, high word, then low word.
+                unsigned time_h;
+                unsigned time_l;
+                cmd->arg(0)->getUnsigned(time_h);
+                cmd->arg(1)->getUnsigned(time_l);
+                unsigned long t = (((unsigned long)time_h) << 16) | time_l;
+                leds.setTime(t);
+
+                leds.invalidate();
+                break;
+            }
+            case CmdStat:        {
+                getStatus(cmd);
+                break; 
+            }
+            case CmdGetCurVals:   {
+                getCurVals(cmd);
+                break; 
+            }
+            case CmdGetMaxPcts:   {
+                getMaxPcts(cmd, cmd->ID());
+                break; 
+            }
+            case CmdSetMaxPct:    {
+                int ichan;
+                int pct;
+                cmd->arg(0)->getInt(ichan);
+                if ((ichan < 0) || (ichan >= NUM_LED_NUMS) || SKIP_LED_NUM(ichan))
+                    break;
+                cmd->arg(1)->getInt(pct);
+                if ((pct < 0) || (pct > 100))
+                    break;
+                
+                leds.setLedPct( cmd->ID(), ichan, pct );
+
+                leds.pushVals();
+
+                break;  
+            }
+            case CmdSetLevel:   {
+                int which = cmd->ID();
+                int pct;
+
+                cmd->arg(0)->getInt(pct);
+                if ((pct < 0) || (pct > 100))
+                    break;
+
+                if (which == 0)
+                    leds.setHighPct(pct);
+                else
+                    leds.setLowPct(pct);
+
+                leds.invalidate();
+
+                break; 
+            }
+            case CmdSetMode: {
+                // Mode, spectrum.
+                int mode;
+                int spec;
+                if ((mode >= 0) && (mode < Leds::NumModes))
+                    leds.setMode( (Leds::Mode)mode );
+
+                cmd->arg(1)->getInt(spec);
+                if ((spec >= 0) && (spec < NUM_SPECTRUMS))
+                    leds.setCurSpectrum(spec);
+
+                leds.invalidate();
+
+                break;
+            }
+            case CmdGetEdges:    {
+                break;
+            }
+            case CmdSaveSettings: {
+                saveSettings();
+                break;
+            } 
+            case CmdRestoreSettings: {
+                restoreSettings();
+                leds.invalidate();
                 break;
             }
             default:
@@ -333,6 +537,7 @@ void loop() {
   }
   updateFixtureRunning();
   updateHeight();
+  leds.update();
 
   processCommand();
 
