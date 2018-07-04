@@ -57,18 +57,21 @@ const CommandDescr* CommandParser::getDescr( CommandKind kind ) const
 
 bool CommandParser::decodeInt( int& i )
 {
+    unsigned v = 0;
     char* cp = m_token;
     bool s = (*m_token == '-');
     if (s)
         cp++;
 
     while ((*cp >= '0') && (*cp <= '9')) {
-        i = (i*10) + (*cp - '0');
+        v = (v*10) + (*cp - '0');
         cp++;
     }
 
     if (s)
-        i = -i;
+        i = -v;
+    else
+        i = v;
 
     return !(*cp);
 }
