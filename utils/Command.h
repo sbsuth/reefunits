@@ -18,6 +18,8 @@
 #define X(a,b,c,d,e) a,
 #elif MAX_ARGS==3
 #define X(a,b,c,d,e,f) a,
+#elif MAX_ARGS==4
+#define X(a,b,c,d,e,f,g) a,
 #else
 #error "Unsupported MAX_ARGS"
 #endif
@@ -66,6 +68,14 @@ class CommandArg {
     bool getInt( int& v ) {
         if (m_kind == CmdArgInt) {
             v = m_val.i;
+            return true;
+        } else {
+            return false;
+        }
+    }
+    bool getUnsigned( unsigned int& v ) {
+        if (m_kind == CmdArgInt) {
+            v = (unsigned)m_val.i;
             return true;
         } else {
             return false;
@@ -239,6 +249,8 @@ struct CommandDescr
 #define X(a,b,c,d,e) const char string_##a[] PROGMEM = b;
 #elif MAX_ARGS==3
 #define X(a,b,c,d,e,f) const char string_##a[] PROGMEM = b;
+#elif MAX_ARGS==4
+#define X(a,b,c,d,e,f,g) const char string_##a[] PROGMEM = b;
 #else
 #error "Unsupported MAX_ARGS"
 #endif
@@ -252,6 +264,8 @@ struct CommandDescr
 #define X(a,b,c,d,e) { a,      string_##a, c, d, e  },
 #elif MAX_ARGS==3
 #define X(a,b,c,d,e,f) { a,      string_##a, c, d, e, f  },
+#elif MAX_ARGS==4
+#define X(a,b,c,d,e,f,g) { a,      string_##a, c, d, e, f, g  },
 #else
 #error "Unsupported MAX_ARGS"
 #endif
