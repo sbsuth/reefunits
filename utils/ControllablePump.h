@@ -34,8 +34,9 @@ class ControllablePump
         ShutdownUnset   = 0,
         ShutdownCancel  = 1,
         ShutdownOff     = 2,
-        ShutdownSlow    = 3,
-        NumShutdowns    = 4
+        ShutdownHalf    = 3,
+        ShutdownFull    = 4,
+        NumShutdowns    = 5
     };
 
     //static const unsigned ReassertSwitchInterval = 10 * 1000;
@@ -272,8 +273,11 @@ class ControllablePump
         } else {
             // Temp shutdown.
             switch (m_tempShutoffMode) {
-                case ShutdownSlow:
-                    newSpeed = m_slowSpeed;
+                case ShutdownHalf:
+                    newSpeed = m_topSpeed / 2;
+                    break;
+                case ShutdownFull:
+                    newSpeed = m_topSpeed;
                     break;
                 case ShutdownOff:
                 default:
@@ -319,7 +323,8 @@ class ControllablePump
 
     bool inTempShutdown() {
         switch (m_tempShutoffMode) {
-            case ShutdownSlow:
+            case ShutdownHalf:
+            case ShutdownFull:
             case ShutdownOff:
                 return m_tempShutoffUntil;
             default:
@@ -352,12 +357,9 @@ class ControllablePump
             case ShutdownCancel:
                 cancelTempShutoff();
                 break;
-            case ShutdownOff:
-            case ShutdownSlow:
+            default:
                 setTempShutoffInterval(secs);
                 m_tempShutoffMode = kind;
-                break;
-            default:
                 break;
         }
     }
