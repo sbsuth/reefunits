@@ -5,7 +5,7 @@ MCU :=atmega2560
 ARDUINO_VERSION := 10607
 #MCU := atmega328p
 #ARDUINO_VERSION := 10607
-PORT := \\.\COM6
+PORT := \\.\COM3
 
 include ../utils/Makefile.arduino
 
