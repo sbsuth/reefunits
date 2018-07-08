@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 typedef unsigned char byte;
-#if 1
+#if 0
 //float latitude = 47.612;
 float latitude = 0;
 float longitude = -122.104;
@@ -12,11 +12,7 @@ int TimeZone = -7;
 //float latitude = -19.770621;   // + to N  Defualt - (-19.770621) Heart Reef, Great Barrier Reef, QLD, Australia    
 //float longitude = 149.238532;  // + to E  Defualt - (149.238532)   
 //int TimeZone = 10;             // + to E  Defulat - (10)   
-//float latitude = -21.534847; // + to S Defualt - (-21.534847) Heart Reef, Great Barrier Reef, QLD, Australia
-//float longitude = 174.287109; // + to E Defualt - (174.287109)
-//int TimeZone = 12; // + to E Defulat - (12)
-
-float latitude = 0; // + to S Defualt - (-21.534847) Heart Reef, Great Barrier Reef, QLD, Australia
+float latitude = -21.534847; // + to S Defualt - (-21.534847) Heart Reef, Great Barrier Reef, QLD, Australia
 float longitude = 174.287109; // + to E Defualt - (174.287109)
 int TimeZone = 12; // + to E Defulat - (12)
 
@@ -130,12 +126,15 @@ int main( int argc, char** argv )
     int offset = (argc > 1) ? atoi(argv[1]) : 0;
     time_t now = time(0) + offset;
 
-    now = 1530514800;
+for (int j=0; j<2; j++) {
+    now = 1530715353;
     for ( int i=0; i < 24; i++ ) {
         now += (60 * 60);
-        struct tm* now_tm = localtime(&now);
+        //struct tm* now_tm = localtime(&now);
+        struct tm* now_tm = gmtime(&now);
         float sun = SunLight( now_tm->tm_year, now_tm->tm_mon, now_tm->tm_mday, now_tm->tm_hour, now_tm->tm_min, now_tm->tm_sec)   ;
         printf("time=%s: sun=%f\n", asctime(now_tm), sun);
     }
+}
 
 }
