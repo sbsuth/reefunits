@@ -35,6 +35,7 @@ class JsonObject;
 enum CommandArgKind {
     CmdArgNone,
     CmdArgInt,
+    CmdArgLong,
     CmdArgFloat,
     CmdArgStr,
 };
@@ -65,6 +66,11 @@ class CommandArg {
         m_val.i = v;
         m_set = true;
     }
+    void setLong( long v ) {
+        m_kind = CmdArgLong;
+        m_val.l = v;
+        m_set = true;
+    }
     bool getInt( int& v ) {
         if (m_kind == CmdArgInt) {
             v = m_val.i;
@@ -73,9 +79,25 @@ class CommandArg {
             return false;
         }
     }
+    bool getLong( long& v ) {
+        if (m_kind == CmdArgLong) {
+            v = m_val.l;
+            return true;
+        } else {
+            return false;
+        }
+    }
     bool getUnsigned( unsigned int& v ) {
         if (m_kind == CmdArgInt) {
             v = (unsigned)m_val.i;
+            return true;
+        } else {
+            return false;
+        }
+    }
+    bool getUnsignedLong( unsigned long& v ) {
+        if (m_kind == CmdArgLong) {
+            v = (unsigned long)m_val.l;
             return true;
         } else {
             return false;
@@ -117,6 +139,7 @@ class CommandArg {
     union {
         int     i;
         float   f;
+        long    l;
         char    s[MAX_STR_ARG_LEN];
     }   m_val;
 };
@@ -479,12 +502,13 @@ class CommandParser
     const CommandDescr* getDescr( CommandKind k ) const ;
         
   protected:
-    enum State { ExpCmd, ExpId, ExpInt, ExpFloat, ExpStr, ExpHTTP };
+    enum State { ExpCmd, ExpId, ExpInt, ExpLong, ExpFloat, ExpStr, ExpHTTP };
 
     bool setExpArg( int index, bool eol, bool& error );
     bool nextToken( bool& eol, bool& error );
     bool decodeCommand( bool &error );
-    bool decodeInt( int& i );
+    template <typename T>
+    bool decodeInt( T& i );
     bool decodeFloat( float& f );
     void processHTTPHeader( bool eol );
 

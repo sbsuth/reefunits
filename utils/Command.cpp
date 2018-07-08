@@ -55,9 +55,10 @@ const CommandDescr* CommandParser::getDescr( CommandKind kind ) const
     return 0;
 }
 
-bool CommandParser::decodeInt( int& i )
+template <typename T>
+bool CommandParser::decodeInt( T& i )
 {
-    unsigned v = 0;
+    T v = 0;
     char* cp = m_token;
     bool s = (*m_token == '-');
     if (s)
@@ -120,6 +121,9 @@ bool CommandParser::setExpArg( int index, bool eol, bool& error )
     switch (m_descr->argKind(m_argNum)) {
         case CmdArgInt:
             m_state = ExpInt;
+            break;
+        case CmdArgLong:
+            m_state = ExpLong;
             break;
         case CmdArgFloat:
             m_state = ExpFloat;
@@ -298,6 +302,21 @@ Command* CommandParser::getCommand( Command* cmd, bool& error, unsigned timeout 
                 int i = 0;
                 if ( decodeInt( i ) ) {
                     cmd->arg(m_argNum)->setInt(i);
+                    if ( !setExpArg( ++m_argNum,eol,error )) {
+                        reset();
+                        return 0;
+                    }
+                } else {
+                    error = true;
+                    reset();
+                    return 0;
+                }
+                break;
+            }
+            case ExpLong: {
+                long i = 0;
+                if ( decodeInt( i ) ) {
+                    cmd->arg(m_argNum)->setLong(i);
                     if ( !setExpArg( ++m_argNum,eol,error )) {
                         reset();
                         return 0;
