@@ -1,6 +1,16 @@
 /*
  */
 
+// Debug prints.
+#define DEBUG_STARTUP 1
+//#define DEBUG_CHANGES 1
+#define DEBUG_CMD 1
+#define DEBUG_CONNECT 1
+
+
+// Cause period re-init of RF24 subsystem.
+#define RF24_RE_INIT_AFTER_NUM_EMPTY 2
+
 #include <Arduino.h>
 #include "Switch.h"
 #include "Avg.h"
@@ -9,11 +19,9 @@
 #include <SPI.h>
 #include "RF24Interface.h"
 #include <ArduinoJson.h>
-
 #include "leds.h"
-
 #include "Command.h"
-
+#include "RemoteTime.h"
 
 //#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__)
 // Uno
@@ -43,12 +51,6 @@
 //#endif
 #define CURRENT_IN      A0
 
-// Debug prints.
-//#define DEBUG_STARTUP 1
-//#define DEBUG_CHANGES 1
-//#define DEBUG_CMD 1
-//#define DEBUG_CONNECT 1
-
 #define LED_EE_ADDR 16
 
 
@@ -62,13 +64,17 @@ static Switch downButton( DOWN_BUTTON_IN );
 
 
 // Network objects
-RF24IPInterface rf24( 7, RF24_CE, RF24_CSN, RF24_PA_LOW );
+RF24IPInterface rf24( 4, RF24_CE, RF24_CSN, RF24_PA_LOW );
 DEFINE_RF24IPInterface_STATICS(rf24);
 
 // Leds
 Leds leds(LED_EE_ADDR);
 
-#define EE_SIG (unsigned char)123
+
+// Time from host.
+RemoteTime remoteTime;
+
+#define EE_SIG (unsigned char)124
 
 // Set the prescale values on the timers:
 // Avoid doing timer 0.
@@ -270,7 +276,7 @@ static void getHeightCmd( Command* cmd )
 
 static void getStatus( Command* cmd )
 {
-    StaticJsonBuffer<300> jsonBuffer;
+    StaticJsonBuffer<410> jsonBuffer;
 
     JsonObject& json = jsonBuffer.createObject();
     json["height"] = curHeight / 1000;
@@ -280,16 +286,22 @@ static void getStatus( Command* cmd )
     json["tz"] = leds.getTimezone();
     json["high_pct"] = leds.getHighPct();
     json["low_pct"] = leds.getLowPct();
+    json["low_pct"] = leds.getLowPct();
     json["timed_pct"] = leds.getTimedPct();
     json["mode"] = (int)leds.getMode();
     json["spec"] = leds.getCurSpectrum();
     json["sun_angle"] = leds.getSunAngle();
     json["am_factor"] = leds.getAMFactor();
+    json["ang_factor"] = leds.getAngleFactor();
+    json["norm_factor"] = leds.getNormFactor();
+    json["peak_factor"] = leds.getPeakFactor();
     json["offset_sec"] = leds.getOffsetSec();
+    json["period_sec"] = leds.getPeriodSec();
+    json["time_set"] = leds.timeIsSet();
     cmd->ack( json );
     #if 0
     https://arduinojson.org/v5/assistant/
-    277
+    404
     {
       "height":123,
       "moving":true,
@@ -302,8 +314,13 @@ static void getStatus( Command* cmd )
       "mode": 0,
       "spec": 0,
       "sun_angle": 45.87,
+      "ang_factor": 0.78,
       "am_factor": 0.78,
-      "offset_sec": 0
+      "peak_factor": 0.78,
+      "norm_factor": 0.78,
+      "offset_sec": 0,
+      "period_sec": 0,
+      "time_set": true
     }
     #endif
 }
@@ -326,6 +343,44 @@ static void getCurVals( Command* cmd )
     110
     {
       "cur_pct":[123,123,123,123,234,234,123],
+    }
+    #endif
+
+}
+
+static void getCycle( Command* cmd )
+{
+    StaticJsonBuffer<200> jsonBuffer;
+
+    JsonObject& json = jsonBuffer.createObject();
+    const PeriodData* datas[2] = {&leds.getCalculatedCycle(), &leds.getUsedCycle()};
+    const char* names[2] = {"calc","used"};
+    for ( int i=0; i < 2; i++ ) {
+        JsonObject& cycle = json.createNestedObject(names[i]);
+        const PeriodData& data = *datas[i];
+        cycle["sr"] = leds.toDaySec(data.sunriseSec);
+        cycle["ss"] = leds.toDaySec(data.sunsetSec);
+        cycle["ps"] = leds.toDaySec(data.peakSec);
+        cycle["pp"] = data.peakPct;
+    }
+    cmd->ack( json );
+
+    #if 0
+    https://arduinojson.org/v5/assistant/
+    184
+    {
+      "calc": {
+        "sr": 1234,
+        "ss": 1234,
+        "ps": 1234,
+        "pp": 128
+      },
+      "used": {
+        "sr": 1234,
+        "ss": 1234,
+        "ps": 1234,
+        "pp": 128
+      }
     }
     #endif
 
@@ -417,20 +472,16 @@ void processCommand()
                 if (cmd->arg(2)->getInt(tz))
                     leds.setTimezone(tz);
 
-                leds.invalidate();
+                leds.invalidate(true);
                 break;
             }
 
             case CmdSetTime: {
-                // Read 32-bit unsigned, high word, then low word.
-                unsigned time_h;
-                unsigned time_l;
-                cmd->arg(0)->getUnsigned(time_h);
-                cmd->arg(1)->getUnsigned(time_l);
-                unsigned long t = (((unsigned long)time_h) << 16) | time_l;
-                leds.setTime(t);
-
-                leds.invalidate();
+                unsigned long t = 0;
+                if (cmd->arg(0)->getUnsignedLong(t)) {
+                    leds.setTime(t);
+                    leds.invalidate();
+                }
                 break;
             }
             case CmdStat:        {
@@ -440,6 +491,10 @@ void processCommand()
             case CmdGetCurVals:   {
                 getCurVals(cmd);
                 break; 
+            }
+            case CmdGetCycle:    {
+                getCycle(cmd);
+                break;
             }
             case CmdGetMaxPcts:   {
                 getMaxPcts(cmd, cmd->ID());
@@ -462,6 +517,9 @@ void processCommand()
                 break;  
             }
             case CmdSetLevel:   {
+                // ID: 0 for high, 1 for low.
+                // Arg0: pct.
+                // Arg1: norm factor, 0.0<=val<=1.0.  Ignored for low.
                 int which = cmd->ID();
                 int pct;
 
@@ -469,9 +527,17 @@ void processCommand()
                 if ((pct < 0) || (pct > 100))
                     break;
 
-                if (which == 0)
+                if (which == 0) {
                     leds.setHighPct(pct);
-                else
+
+                    float norm = 1.0;
+                    cmd->arg(1)->getFloat(norm);
+                    if (norm < 0.0) 
+                        norm = 0.0;
+                    else if (norm > 1.0)
+                        norm = 1.0;
+                    leds.setNormFactor(norm);
+                } else
                     leds.setLowPct(pct);
 
                 leds.invalidate();
@@ -493,17 +559,19 @@ void processCommand()
 
                 break;
             }
-            case CmdGetEdges:    {
-                break;
-            }
             case CmdSaveSettings: {
                 saveSettings();
                 break;
             } 
             case CmdRestoreSettings: {
                 restoreSettings();
-                leds.invalidate();
+                leds.invalidate(true);
                 break;
+            }
+            case CmdDumpDay: {
+                int numPts = 24*4;
+                cmd->arg(0)->getInt(numPts);
+                leds.dumpDay(numPts,cmd->parser()->stream());
             }
             default:
                 #if DEBUG_CMD
@@ -524,6 +592,7 @@ void processCommand()
 }
 
 
+
 // the loop function runs over and over again forever
 void loop() {
   rf24.update();
@@ -537,6 +606,10 @@ void loop() {
   }
   updateFixtureRunning();
   updateHeight();
+
+  if (remoteTime.update( !leds.timeIsSet() )) 
+    leds.setTime( remoteTime.getTime() );
+
   leds.update();
 
   processCommand();

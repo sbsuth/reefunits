@@ -1,7 +1,11 @@
 #include <Arduino.h>
 #include "leds.h"
 #include <EEPROM.h>
+#undef USE_JSON
+#include "Command.h"
 #include <Time.h>
+
+#define DEBUG_LIGHT 1
 
 #define RECALC_TIMED_MS 5000
 
@@ -45,6 +49,8 @@ unsigned Leds::saveSettings()
     EEPROM.put( addr, m_offsetSec );
     addr += sizeof(int);
     EEPROM.put( addr, (unsigned char)m_mode );
+    EEPROM.put( addr, m_normFactor );
+    addr += sizeof(float);
 }
 
 unsigned Leds::restoreSettings()
@@ -71,11 +77,19 @@ unsigned Leds::restoreSettings()
     unsigned char mode = 0;
     EEPROM.get( addr, mode );
     m_mode = (mode < NumModes) ? (Mode)mode : Timed;
+    EEPROM.get( addr, m_normFactor );
+    addr += sizeof(float);
 }
 
 
 // The given time is as returned by time(), but adjusted for timezone.
 void Leds::setTime( unsigned long t ) 
+{
+    ::setTime( t );
+    m_timeIsSet = true;
+}
+// Sets time temporarily, not affecting m_timeIsSet.
+void Leds::tempSetTime( unsigned long t ) 
 {
     ::setTime( t );
 }
@@ -141,11 +155,11 @@ float dtan( float deg )
 
 void Leds::updateSunAngle()
 {
+    unsigned long timeDelta = adjustTime();
     float a = floor((14.0 - month()) / 12.0);   
     float y = year() + 4800.0 - a;   
     float m = month() + (12.0 * a) - 3.0;   
     float AH;   
-    int result;   
 
     float JC = (((day() + floor(((153.0 * m) + 2.0) / 5.0) + (365.0 * y) + floor(y / 4.0) - floor(y / 100.0) + floor(y / 400.0) - 32045.0) + ((hour() / 24.0) + (minute() / 1444.0) + (second() / 86400.0))) - 2451556.08) / 36525.0;   
 
@@ -187,7 +201,7 @@ void Leds::updateSunAngle()
 
     float STD = 8.0 * HAS;   
 
-    float TST = fmod((((hour())+(minute() / 60.0) + (second() / 3600.0)) / 24.0) * 1440.0 + EQoT + 4.0 * m_longitude - 60.0 * (int)m_timezone, 1440.0) + m_offsetSec;   
+    float TST = fmod((((hour())+(minute() / 60.0) + (second() / 3600.0)) / 24.0) * 1440.0 + EQoT + 4.0 * m_longitude - 60.0 * (int)m_timezone, 1440.0);
 
     if (TST / 4 < 0.0)   
     {   
@@ -203,13 +217,131 @@ void Leds::updateSunAngle()
     float SEA = 90.0 - SZA;   
 
     m_sunAngle = 90.0 - SZA;   
+
+    restoreTime( timeDelta );
+
+    #if DEBUG_LIGHT
+    Serial.print("DEBUG: updateSunAngle="); Serial.println(m_sunAngle);
+    #endif
 }
 
 
-// Air mass reference: http://www.ftexploring.com/solar-energy/air-mass-and-insolation2.htm
 
+// Calculates the period data for the day.
+// This is time consuming, and only needs to be done once per day, or when location or time or offset or scale are changed.
+void Leds::updateCycle( bool force )
+{
+    if (!force && !m_cycleInvalid)
+        return;
+    m_cycleInvalid = false;
+
+    // Save and restore time and sun angle around searches since the search has a side effect.
+    unsigned long oldTime = now();
+    float oldAngle = m_sunAngle;
+    unsigned long tbegin = millis();
+
+    unsigned long hourSecs = 60UL * 60UL;
+    m_dayStart = now() - ((hour()*hourSecs) + (minute()*60) + second());
+    unsigned long t4AM = m_dayStart + (4 * hourSecs);
+    unsigned long t9AM = m_dayStart + (9 * hourSecs);
+    unsigned long t4PM = m_dayStart + (16 * hourSecs);
+    unsigned long t10PM = m_dayStart + (22 * hourSecs);
+
+    // Binsearch for sunrise and sunset.
+    m_calcCycle.sunriseSec = binsearchTime( t4AM, t9AM, 0.0, &Leds::getSunAngleForTime );
+    #if DEBUG_LIGHT
+    Serial.print("DEBUG: sunrise=");Serial.println(toDaySec(m_calcCycle.sunriseSec));
+    #endif
+    m_calcCycle.sunsetSec = binsearchTime( t4PM, t10PM, 0.0, &Leds::getSunAngleForTime );
+    #if DEBUG_LIGHT
+    Serial.print("DEBUG: sunset=");Serial.println(toDaySec(m_calcCycle.sunsetSec));
+    #endif
+
+    // Presume max is right between.
+    m_calcCycle.peakSec = m_calcCycle.sunriseSec + ((m_calcCycle.sunsetSec - m_calcCycle.sunriseSec)/2);
+    m_calcCycle.peakPct = getSunAngleForTime( m_calcCycle.peakSec );
+
+
+    // Restore.
+    m_sunAngle = oldAngle;
+    setTime(oldTime);
+
+    // calculate desired based on m_periodSec.  Always want 100%
+    long delta = 0;
+    if (m_periodSec != 0)
+        delta = ((m_calcCycle.sunsetSec - m_calcCycle.sunriseSec) - m_periodSec)/2;
+    m_useCycle.sunriseSec = m_calcCycle.sunriseSec + delta;
+    m_useCycle.sunsetSec = m_calcCycle.sunsetSec - delta;
+    m_useCycle.peakSec = m_calcCycle.peakSec;
+    m_useCycle.peakPct = 100;
+
+    #if DEBUG_LIGHT
+    Serial.print("DEBUG: updateCycle, sunrise="); 
+    Serial.print( toDaySec(m_calcCycle.sunriseSec));
+    Serial.print(", sunset="); 
+    Serial.print( toDaySec(m_calcCycle.sunsetSec));
+    Serial.print(", peak="); 
+    Serial.println( toDaySec(m_calcCycle.peakPct));
+    Serial.print(", delay(ms)="); 
+    Serial.println( millis() - tbegin );
+    #endif
+}
+
+// Account for the offset time, and if within the photo period, the period time.
+long Leds::calcTimeAdjustment()
+{
+    unsigned long daySec = (hour() * (60UL*60UL)) + (minute() * 60UL) + second();
+    unsigned long origDaySec = daySec;
+
+    if (   ((daySec < m_calcCycle.sunriseSec) || (daySec > m_calcCycle.sunsetSec))
+        && ((daySec < m_useCycle.sunriseSec) || (daySec > m_useCycle.sunsetSec)) ) {
+        return -m_offsetSec;
+    }
+    
+
+    unsigned long useRange = (m_useCycle.sunsetSec - m_useCycle.sunriseSec);
+    if (useRange == 0)
+        return -m_offsetSec;
+
+    unsigned long calcRange = (m_calcCycle.sunsetSec - m_calcCycle.sunriseSec);
+    unsigned long calcCenter = (m_calcCycle.sunriseSec + (calcRange/2));
+    if (calcRange != useRange) {
+        float ratio = ((float)calcRange / (float)useRange);
+
+        long calcCenterDist = daySec - calcCenter;
+        long useCenterDist = floor((float)calcCenterDist * ratio);
+
+        daySec += (useCenterDist - calcCenterDist);
+
+    }
+    daySec -= m_offsetSec;
+
+    long adj = (daySec - origDaySec);
+
+
+    #if DEBUG_LIGHT
+    Serial.print("DEBUG: calcLightAdjustment="); Serial.println(adj);
+    #endif
+
+    return adj;
+}
+
+long Leds::adjustTime()
+{
+    long adj = calcTimeAdjustment();
+
+    ::adjustTime(adj);
+
+    return adj;
+}
+
+void Leds::restoreTime( unsigned long delta )
+{
+    ::adjustTime( -delta );
+}
 
 // Given the current solar angle and the m_highPct value, given the current global percentage for the lights.
+// Air mass reference: http://www.ftexploring.com/solar-energy/air-mass-and-insolation2.htm
 void Leds::updateTimedPct()
 {
     if (m_sunAngle < 0) {
@@ -217,7 +349,7 @@ void Leds::updateTimedPct()
         return;
     }
 
-    float angleFactor = dcos(m_sunAngle);
+    m_angleFactor = dcos(90.0-m_sunAngle);
 
     float AM;
     float SZA = 90.0 - m_sunAngle;
@@ -225,8 +357,22 @@ void Leds::updateTimedPct()
         SZA = 5.0;
     AM = 1.0 / dcos(SZA); // Air Mass: ratio of mass of air traversed relative to overhead.
     m_amFactor = 1.353 * 1.1 * pow( 0.7, pow( AM, 0.678 ) );
+    
+    // If in timed mode, scale so that at highest point can be scaled towards m_maxPct.
+    // If the m_normFactor is 1.0 seasonal max diffs are eliminated, and the peak is m_maxPct.
+    // If its 0.0, we use the natural values for the location, and will usually never reach m_maxPct.
+    float fullNorm = (m_calcCycle.peakPct > 0) ? ((float)m_useCycle.peakPct / (float)m_calcCycle.peakPct) : 1.0;
+    if (fullNorm > 1.0) {
+        m_peakFactor = 1.0 + ((fullNorm - 1.0) * m_normFactor);
+    } else {
+        m_peakFactor = 1.0; // Never decrease.
+    }
 
-    m_timedPct = floor((angleFactor * m_amFactor * m_highPct) + 0.5); 
+    m_timedPct = floor((m_angleFactor * m_amFactor * m_peakFactor * m_highPct ) + 0.5); 
+
+    #if DEBUG_LIGHT
+    Serial.print("DEBUG: updateTimedPct="); Serial.println(m_timedPct);
+    #endif
 }
 
 unsigned Leds::getLightPct()
@@ -247,13 +393,136 @@ unsigned Leds::getLightPct()
 
 void Leds::update()
 {
+    if (day() != m_lastDay) {
+        // Update cycle at the start of every day.
+        m_cycleInvalid = true;
+        m_timeIsSet = false;
+        m_lastDay = day();
+    }
     if ((m_lastUpdate + RECALC_TIMED_MS) < millis()) {
         if (m_mode == Timed) {
-            updateSunAngle();
-            updateTimedPct();
+            updateAll();
         }
         m_lastUpdate = millis();
+        #if 0  // Enable actual light setting.
         pushVals();
+        #endif
     }
+}
+
+void Leds::dumpDay( int numPoints, InStream* stream)
+{
+    if (numPoints <= 0)
+        return;
+
+    unsigned long tod = (hour() * (60UL*60UL)) + (minute() * 60UL) + second();
+    unsigned long torig =  now();
+    unsigned long incr = (24UL * 60UL * 60UL)/(unsigned long)numPoints;
+
+    stream->write("(");
+    
+    invalidate(true);
+
+    unsigned long t = torig-tod;
+    for ( int i=0; i < numPoints; i++, t+=incr) {
+
+        unsigned long markStart = millis();
+        tempSetTime(t);
+        updateAll();
+
+        if (i==0) {
+            const PeriodData* datas[2] = {&getCalculatedCycle(), &getUsedCycle()};
+            for ( int i=0; i < 2; i++ ) {
+                const PeriodData& data = *datas[i];
+                stream->write( String( toDaySec(data.sunriseSec) ).c_str() );
+                stream->write(",");
+                stream->write( String( toDaySec(data.sunsetSec) ).c_str() );
+                stream->write(",");
+                stream->write( String( toDaySec(data.peakSec) ).c_str() );
+                stream->write(",");
+                stream->write( String( data.peakPct).c_str() );
+                stream->write("\n");
+            }
+        }
+
+        stream->write(String(i).c_str());
+        stream->write(",");
+        stream->write( String( toDaySec((unsigned long)t)).c_str() );
+        stream->write(",");
+        stream->write(String(m_sunAngle).c_str());
+        stream->write(",");
+        stream->write(String(m_angleFactor).c_str());
+        stream->write(",");
+        stream->write(String(m_amFactor).c_str());
+        stream->write(",");
+        stream->write(String(m_peakFactor).c_str());
+        stream->write(",");
+        stream->write(String(m_timedPct).c_str());
+        stream->write(",");
+        stream->write( String(millis() - markStart).c_str());
+        stream->write("\n");
+    }
+
+
+    tempSetTime(torig);
+    invalidate(true);
+    updateAll();
+}
+
+// has side effects!  Sets time and m_sunAngle.
+// Intended to be used during binsearch, which should save/restore on outside.
+float Leds::getSunAngleForTime( unsigned long t )
+{
+    tempSetTime(t);
+    updateSunAngle();
+    return m_sunAngle;
+}
+
+// Searches for the closest point to target between start and end.
+// Assumes the slope is the same sign over the entire range.
+// Uses the given func to calculate the value.
+// Presums the func has a side effect on 
+unsigned long Leds::binsearchTime( unsigned long start, unsigned long end, float target, float (Leds::*func)( unsigned long )  )
+{
+    unsigned long minSep = 60UL * 2; // 2 min resolution 
+    
+    int dir = -1; 
+    bool dirKnown = false;
+
+    float vstart = (this->*func)(start);
+    float vend = (this->*func)(end);
+
+    int maxIters = (end - start) / minSep;
+
+    for ( int iter=0; iter < maxIters; iter++ ) {
+        unsigned tsep = (end - start);
+        if (tsep < minSep)
+            break;
+
+        if (dir < 0) {
+            dir = (vstart < vend) ? 1 : 0;
+        }
+        unsigned long mid = start + ((end - start)/2);
+        float vmid = (this->*func)(mid);
+        
+        if (dir) {
+            if (vmid > target)  {
+                end = mid;
+                vend = vmid;
+            } else {
+                start = mid;
+                vstart = vmid;
+            }
+        } else {
+            if (vmid < target)  {
+                end = mid;
+                vend = vmid;
+            } else {
+                start = mid;
+                vstart = vmid;
+            }
+        }
+    }
+    return start + ((end - start)/2);
 }
 
