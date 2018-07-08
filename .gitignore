@@ -28,6 +28,7 @@ examples_linux/*
 *.eep
 *.elf
 *.hex
+*.exe
 *.s#*
 ~$*
 *WRL*.tmp
