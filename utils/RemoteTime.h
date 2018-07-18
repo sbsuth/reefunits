@@ -1,6 +1,7 @@
 #ifndef REMOTE_TIME_H
 #define REMOTE_TIME_H 1
 
+
 class RemoteTime 
 {
   public:
@@ -42,13 +43,16 @@ class RemoteTime
                     client.stop();
                     rf24->pingHeartbeat();
                     #if DEBUG_CONNECT
-                    Serial.print(F("Got time")); Serial.println(str);
+                    Serial.print(F("Got time str: ")); Serial.println(str);
                     #endif
                     m_gotTime = decodeTime(str);
                     if (m_gotTime)
                         gotNewTime = true;
-                    else
-                        m_queriedTime = false;
+
+                    #if DEBUG_CONNECT
+                    Serial.print(F("Good time="));Serial.print(m_gotTime);Serial.print(", m_time=");Serial.println( m_time );
+                    #endif
+                    m_queriedTime = false;
                 } else {
                     m_lastTimeAttempt = millis();
                     #if DEBUG_CONNECT
@@ -104,10 +108,11 @@ class RemoteTime
         int X = str.indexOf('X');
         if (X <= 0)
             return false;
-        m_time = str.substring(0,X-1).toInt();
+        m_time = str.substring(0,X).toInt();
         return (m_time > 0);
     }
 
 };
+
 
 #endif

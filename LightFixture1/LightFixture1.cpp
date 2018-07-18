@@ -2,10 +2,10 @@
  */
 
 // Debug prints.
-#define DEBUG_STARTUP 1
+//#define DEBUG_STARTUP 1
 //#define DEBUG_CHANGES 1
-#define DEBUG_CMD 1
-#define DEBUG_CONNECT 1
+//#define DEBUG_CMD 1
+//#define DEBUG_CONNECT 1
 
 
 // Cause period re-init of RF24 subsystem.
@@ -74,7 +74,7 @@ Leds leds(LED_EE_ADDR);
 // Time from host.
 RemoteTime remoteTime;
 
-#define EE_SIG (unsigned char)124
+#define EE_SIG (unsigned char)125
 
 // Set the prescale values on the timers:
 // Avoid doing timer 0.
@@ -276,7 +276,7 @@ static void getHeightCmd( Command* cmd )
 
 static void getStatus( Command* cmd )
 {
-    StaticJsonBuffer<410> jsonBuffer;
+    StaticJsonBuffer<450> jsonBuffer;
 
     JsonObject& json = jsonBuffer.createObject();
     json["height"] = curHeight / 1000;
@@ -286,7 +286,6 @@ static void getStatus( Command* cmd )
     json["tz"] = leds.getTimezone();
     json["high_pct"] = leds.getHighPct();
     json["low_pct"] = leds.getLowPct();
-    json["low_pct"] = leds.getLowPct();
     json["timed_pct"] = leds.getTimedPct();
     json["mode"] = (int)leds.getMode();
     json["spec"] = leds.getCurSpectrum();
@@ -295,13 +294,15 @@ static void getStatus( Command* cmd )
     json["ang_factor"] = leds.getAngleFactor();
     json["norm_factor"] = leds.getNormFactor();
     json["peak_factor"] = leds.getPeakFactor();
-    json["offset_sec"] = leds.getOffsetSec();
+    json["tod_sec"] = leds.getTimeOfDaySec();
+    json["now"] = leds.getTimeSec();
+    json["sr_sec"] = leds.getSunriseSec();
     json["period_sec"] = leds.getPeriodSec();
     json["time_set"] = leds.timeIsSet();
     cmd->ack( json );
     #if 0
     https://arduinojson.org/v5/assistant/
-    404
+    442
     {
       "height":123,
       "moving":true,
@@ -318,7 +319,9 @@ static void getStatus( Command* cmd )
       "am_factor": 0.78,
       "peak_factor": 0.78,
       "norm_factor": 0.78,
-      "offset_sec": 0,
+      "tod_sec": 1234,
+      "now": 1234,
+      "sr_sec": 0,
       "period_sec": 0,
       "time_set": true
     }
@@ -332,15 +335,13 @@ static void getCurVals( Command* cmd )
     JsonObject& json = jsonBuffer.createObject();
     JsonArray& cur = json.createNestedArray("cur_pct");
     for (unsigned char iled=0; iled < NUM_LED_NUMS; iled++ ) {
-        if ( leds.ledIndexUsed(iled)) {
-            cur.add( leds.getCurVal(iled) );
-        }
+        cur.add( leds.getCurVal(iled) );
     }
     cmd->ack( json );
 
     #if 0
     https://arduinojson.org/v5/assistant/
-    110
+    120
     {
       "cur_pct":[123,123,123,123,234,234,123],
     }
@@ -393,17 +394,15 @@ static void getMaxPcts( Command* cmd, unsigned spec )
     JsonObject& json = jsonBuffer.createObject();
     JsonArray& max = json.createNestedArray("max_pct");
     for (unsigned char iled=0; iled < NUM_LED_NUMS; iled++ ) {
-        if ( leds.ledIndexUsed(iled)) {
-            max.add( leds.getLedPct(spec,iled) );
-        }
+        max.add( leds.getLedPct(spec,iled) );
     }
     cmd->ack( json );
 
     #if 0
     https://arduinojson.org/v5/assistant/
-    110
+    120
     {
-      "max_pct":[123,123,123,123,234,234,123]
+      "max_pct":[123,123,0,123,123,234,234,123]
     }
     #endif
 
@@ -516,47 +515,81 @@ void processCommand()
 
                 break;  
             }
+            case CmdSetMaxPctssA: {
+                for ( int ichan=0; ichan < 4; ichan++ ) {
+                    if (SKIP_LED_NUM(ichan))
+                        continue;
+                    int pct = 0;
+                    if (cmd->arg(ichan)->getInt(pct) && (pct >= 0) && (pct <= 100))
+                        leds.setLedPct( cmd->ID(), ichan, pct );
+                }
+                break;
+            }
+            case CmdSetMaxPctssB: {
+                for ( int ichan=4; ichan < 8; ichan++ ) {
+                    if (SKIP_LED_NUM(ichan))
+                        continue;
+                    int pct = 0;
+                    if (cmd->arg(ichan-4)->getInt(pct) && (pct >= 0) && (pct <= 100))
+                        leds.setLedPct( cmd->ID(), ichan, pct );
+                }
+                break;
+            }
             case CmdSetLevel:   {
-                // ID: 0 for high, 1 for low.
-                // Arg0: pct.
-                // Arg1: norm factor, 0.0<=val<=1.0.  Ignored for low.
-                int which = cmd->ID();
+                // Arg0: lo2 pct.
+                // Arg1: high pct.
+                // Arg2: norm factor, 0.0<=val<=1.0.  Ignored for low.
                 int pct;
 
                 cmd->arg(0)->getInt(pct);
-                if ((pct < 0) || (pct > 100))
-                    break;
+                if ((pct >0) && (pct <= 100))
+                    leds.setLowPct(pct);
 
-                if (which == 0) {
+                cmd->arg(1)->getInt(pct);
+                if ((pct >0) && (pct <= 100))
                     leds.setHighPct(pct);
 
-                    float norm = 1.0;
-                    cmd->arg(1)->getFloat(norm);
-                    if (norm < 0.0) 
-                        norm = 0.0;
-                    else if (norm > 1.0)
-                        norm = 1.0;
-                    leds.setNormFactor(norm);
-                } else
-                    leds.setLowPct(pct);
+                float norm = 1.0;
+                cmd->arg(1)->getFloat(norm);
+                if (norm < 0.0) 
+                    norm = 0.0;
+                else if (norm > 1.0)
+                    norm = 1.0;
+                leds.setNormFactor(norm);
 
                 leds.invalidate();
 
                 break; 
             }
             case CmdSetMode: {
-                // Mode, spectrum.
                 int mode;
-                int spec;
+                cmd->arg(0)->getInt(mode);
                 if ((mode >= 0) && (mode < Leds::NumModes))
                     leds.setMode( (Leds::Mode)mode );
 
-                cmd->arg(1)->getInt(spec);
+                leds.invalidate();
+
+                break;
+            }
+            case CmdSetSpectrum: {
+                int spec;
+                cmd->arg(0)->getInt(spec);
                 if ((spec >= 0) && (spec < NUM_SPECTRUMS))
                     leds.setCurSpectrum(spec);
 
                 leds.invalidate();
 
+                break;
+            }
+            case CmdSetDay: {
+                unsigned long t = 0;
+                if (cmd->arg(0)->getUnsignedLong(t)) {
+                    leds.setSunriseSec(t);
+                }
+                if (cmd->arg(1)->getUnsignedLong(t)) {
+                    leds.setPeriodSec(t);
+                }
+                    
                 break;
             }
             case CmdSaveSettings: {
@@ -607,8 +640,9 @@ void loop() {
   updateFixtureRunning();
   updateHeight();
 
-  if (remoteTime.update( !leds.timeIsSet() )) 
+  if (remoteTime.update( !leds.timeIsSet() ))  {
     leds.setTime( remoteTime.getTime() );
+  }
 
   leds.update();
 

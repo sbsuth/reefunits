@@ -2,19 +2,23 @@
 #define LEDS_H
 
 // LEDs
+#define AMBER_LED       2
+#define RED_LED         3
+#define SKIPPED_LED     4
+#define BLUE_LED        5
+#define ROYAL_BLUE_LED  6
+#define VIOLET_LED      7
+#define WHITE_LED       8
+#define CYAN_LED        9 
+// Cyan sometimes labeled turquois
+
 #define FIRST_LED       2
 #define LAST_LED        9
 #define NUM_LED_NUMS    ((LAST_LED - FIRST_LED) + 1)
 #define NUM_LEDS        (LAST_LED - FIRST_LED)
-#define SKIP_LED(id)    (id == 4)
-#define SKIP_LED_NUM(i)    SKIP_LED(i - FIRST_LED)
-#define WHITE_LED       8
-#define VIOLET_LED      7
-#define ROYAL_BLUE_LED  6
-#define BLUE_LED        5
-#define CYAN_LED        9
-#define RED_LED         3
-#define AMBER_LED       2
+#define SKIP_LED(id)    (id == SKIPPED_LED)
+#define SKIP_LED_NUM(i)    SKIP_LED(i + FIRST_LED)
+
 
 #define NUM_SPECTRUMS   2
 
@@ -45,7 +49,7 @@ class Leds
     Leds( unsigned confAddr) 
         : m_confAddr(confAddr)
         , m_lastUpdate(0)
-        , m_lastDay(0)
+        , m_lastHour(0)
         , m_cycleInvalid(true)
         , m_dayStart(0)
         , m_sunAngle(0)
@@ -57,6 +61,8 @@ class Leds
         , m_longitude(174.287109)
         , m_timezone(12)
         , m_offsetSec(0)
+        , m_periodSec(0)
+        , m_sunriseSec(0)
         , m_normFactor(1.0)
         , m_highPct(50)
         , m_lowPct(20)
@@ -78,7 +84,7 @@ class Leds
 
     void setTime( unsigned long );
     void tempSetTime( unsigned long );
-    bool timeIsSet() const { m_timeIsSet; }
+    bool timeIsSet() const { return m_timeIsSet; }
 
     float getLatitude() const { return m_latitude; }
     void setLatitude( float l ) { m_latitude = l; }
@@ -91,7 +97,7 @@ class Leds
         return m_curVals[ichan];
     }
     bool ledIndexUsed( unsigned char ichan) const {
-        return !SKIP_LED(ichan+FIRST_LED);
+        return !SKIP_LED_NUM(ichan);
     }
     char getLedPct( char spec, unsigned char ichan ) const {
         return m_ledPcts[(spec<0)?m_curSpectrum:spec][ichan];
@@ -104,6 +110,9 @@ class Leds
 
     void update();
 
+    unsigned long getTimeSec() const;
+    unsigned long getTimeOfDaySec() const;
+    unsigned long getDayTime() const;
     unsigned char getHighPct() const { return m_highPct; }
     void setHighPct( unsigned char pct ) {m_highPct = pct; }
     unsigned char getLowPct() const { return m_lowPct; }
@@ -115,8 +124,11 @@ class Leds
     float getNormFactor() const { return m_normFactor; }
     void setNormFactor( float f ) {m_normFactor = f; }
     float getAngleFactor() const { return m_angleFactor; }
-    unsigned getOffsetSec() const { return m_offsetSec; }
-    unsigned getPeriodSec() const { return m_periodSec; }
+    unsigned long getOffsetSec() const { return m_offsetSec; }
+    unsigned long getSunriseSec() const { return m_sunriseSec; }
+    void setSunriseSec( unsigned long s ) {m_sunriseSec = s;}
+    unsigned long getPeriodSec() const { return m_periodSec; }
+    void setPeriodSec( unsigned long s ) {m_periodSec = s;}
     unsigned getDayStartSec() const { return m_dayStart; }
     unsigned long toDaySec( unsigned long sec ) { return sec - m_dayStart; }
     Mode getMode() const {return m_mode;}
@@ -124,6 +136,8 @@ class Leds
 
     const PeriodData& getCalculatedCycle() const { return m_calcCycle; }
     const PeriodData& getUsedCycle() const { return m_useCycle; }
+    float calcAngleFactor( float sunAngle );
+    float calcAMFactor( float sunAngle );
 
     void pushVals() {
         dimAll( getLightPct() );
@@ -147,7 +161,7 @@ class Leds
     unsigned char   m_lowPct;
     unsigned char   m_timedPct;
     unsigned long   m_lastUpdate;
-    unsigned char   m_lastDay;
+    unsigned char   m_lastHour;
     unsigned long   m_dayStart;
     bool            m_cycleInvalid;
     float           m_sunAngle;
@@ -157,8 +171,9 @@ class Leds
     float           m_latitude;
     float           m_longitude;
     char            m_timezone; // Timezone delta for lat and long.
-    unsigned        m_offsetSec;
-    unsigned        m_periodSec;
+    unsigned long   m_offsetSec;
+    unsigned long   m_sunriseSec;
+    unsigned long   m_periodSec;
     PeriodData      m_calcCycle;
     PeriodData      m_useCycle;
     Mode            m_mode;

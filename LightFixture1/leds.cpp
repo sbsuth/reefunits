@@ -5,9 +5,9 @@
 #include "Command.h"
 #include <Time.h>
 
-#define DEBUG_LIGHT 1
+//#define DEBUG_LIGHT 1
 
-#define RECALC_TIMED_MS 5000
+#define RECALC_TIMED_MS (60UL * 1000UL)
 
 void Leds::init() {
     for ( unsigned char iled=0; iled < NUM_LED_NUMS; iled++ ) {
@@ -15,7 +15,7 @@ void Leds::init() {
         if (SKIP_LED(led)) {
             m_curVals[iled] = -1;
             for (unsigned ispec=0; ispec < NUM_SPECTRUMS; ispec++)
-                m_ledPcts[ispec][iled] = -1;
+                m_ledPcts[ispec][iled] = 0;
         } else {
             m_curVals[iled] = 0;
             for (unsigned ispec=0; ispec < NUM_SPECTRUMS; ispec++)
@@ -46,8 +46,10 @@ unsigned Leds::saveSettings()
     EEPROM.put( addr, m_longitude );
     addr += sizeof(float);
     EEPROM.put( addr++, m_timezone );
-    EEPROM.put( addr, m_offsetSec );
-    addr += sizeof(int);
+    EEPROM.put( addr, m_sunriseSec );
+    addr += sizeof(unsigned long);
+    EEPROM.put( addr, m_periodSec );
+    addr += sizeof(unsigned long);
     EEPROM.put( addr, (unsigned char)m_mode );
     EEPROM.put( addr, m_normFactor );
     addr += sizeof(float);
@@ -72,8 +74,10 @@ unsigned Leds::restoreSettings()
     EEPROM.get( addr, m_longitude );
     addr += sizeof(float);
     EEPROM.get( addr++, m_timezone );
-    EEPROM.get( addr, m_offsetSec );
-    addr += sizeof(int);
+    EEPROM.get( addr, m_sunriseSec );
+    addr += sizeof(unsigned long);
+    EEPROM.get( addr, m_periodSec );
+    addr += sizeof(unsigned long);
     unsigned char mode = 0;
     EEPROM.get( addr, mode );
     m_mode = (mode < NumModes) ? (Mode)mode : Timed;
@@ -94,18 +98,28 @@ void Leds::tempSetTime( unsigned long t )
     ::setTime( t );
 }
 
+unsigned long Leds::getTimeSec() const
+{
+    return now();
+}
+// Get number of seconds since start of day.
+unsigned long Leds::getTimeOfDaySec() const
+{
+    return (hour() * (60UL*60UL)) + (minute() * 60UL) + second();
+}
+
 // Set level of all channels to the given pct, scaled by m_ledPcts.
 void Leds::dimAll( unsigned char pct ) {
     if (pct > 100)
         pct = 100;
-    unsigned int val = ((unsigned)pct * 255)/100;
+    unsigned int val = ((unsigned long)pct * 255UL)/100UL;
     for ( char led=FIRST_LED; led <= LAST_LED; led++ ) {
         if (SKIP_LED(led)) 
             continue;
         int i = (led - FIRST_LED);
-        unsigned int ledVal = ((unsigned)m_ledPcts[m_curSpectrum][led] * val)/100;
+        unsigned int ledVal = ((unsigned)m_ledPcts[m_curSpectrum][i] * val)/100;
         m_curVals[i] = ledVal;
-        analogWrite( led, ledVal );
+        //analogWrite( led, ledVal );
     }
 }
 
@@ -258,9 +272,11 @@ void Leds::updateCycle( bool force )
     #endif
 
     // Presume max is right between.
+    // Get the natural intensity pct, considering angle and air mass.
     m_calcCycle.peakSec = m_calcCycle.sunriseSec + ((m_calcCycle.sunsetSec - m_calcCycle.sunriseSec)/2);
-    m_calcCycle.peakPct = getSunAngleForTime( m_calcCycle.peakSec );
-
+    float peakAngle = getSunAngleForTime( m_calcCycle.peakSec );
+    m_calcCycle.peakPct = floor( calcAngleFactor( peakAngle ) * calcAMFactor( peakAngle ) * 100.0);
+    
 
     // Restore.
     m_sunAngle = oldAngle;
@@ -273,7 +289,27 @@ void Leds::updateCycle( bool force )
     m_useCycle.sunriseSec = m_calcCycle.sunriseSec + delta;
     m_useCycle.sunsetSec = m_calcCycle.sunsetSec - delta;
     m_useCycle.peakSec = m_calcCycle.peakSec;
+    if (m_sunriseSec) {
+        m_offsetSec = (m_useCycle.sunriseSec - m_sunriseSec);
+        m_useCycle.sunriseSec = m_sunriseSec;
+        m_useCycle.sunsetSec += m_offsetSec;
+        m_useCycle.peakSec += m_offsetSec;
+    } else {
+        m_offsetSec = 0;
+    }
     m_useCycle.peakPct = 100;
+    
+    // Calculate m_peakFactor, which will scale between values calculated during the say, and the
+    // peak percent (which is fixed at 100).
+    // If the m_normFactor is 1.0 seasonal max diffs are eliminated, and the peak is m_maxPct.
+    // If its 0.0, we use the natural values for the location, and will usually never reach m_maxPct.
+    float fullNorm = (m_calcCycle.peakPct > 0) ? ((float)m_useCycle.peakPct / (float)m_calcCycle.peakPct) : 1.0;
+    if (fullNorm > 1.0) {
+        m_peakFactor = 1.0 + ((fullNorm - 1.0) * m_normFactor);
+    } else {
+        m_peakFactor = 1.0; // Never decrease.
+    }
+
 
     #if DEBUG_LIGHT
     Serial.print("DEBUG: updateCycle, sunrise="); 
@@ -290,7 +326,7 @@ void Leds::updateCycle( bool force )
 // Account for the offset time, and if within the photo period, the period time.
 long Leds::calcTimeAdjustment()
 {
-    unsigned long daySec = (hour() * (60UL*60UL)) + (minute() * 60UL) + second();
+    unsigned long daySec = getTimeOfDaySec();
     unsigned long origDaySec = daySec;
 
     if (   ((daySec < m_calcCycle.sunriseSec) || (daySec > m_calcCycle.sunsetSec))
@@ -320,7 +356,7 @@ long Leds::calcTimeAdjustment()
 
 
     #if DEBUG_LIGHT
-    Serial.print("DEBUG: calcLightAdjustment="); Serial.println(adj);
+    //Serial.print("DEBUG: calcLightAdjustment="); Serial.println(adj);
     #endif
 
     return adj;
@@ -340,6 +376,21 @@ void Leds::restoreTime( unsigned long delta )
     ::adjustTime( -delta );
 }
 
+float Leds::calcAngleFactor( float sunAngle )
+{
+    return dcos(90.0-sunAngle);
+}
+
+float Leds::calcAMFactor( float sunAngle )
+{
+    float AM;
+    float SZA = 90.0 - sunAngle;
+    if (SZA < 5)
+        SZA = 5.0;
+    AM = 1.0 / dcos(SZA); // Air Mass: ratio of mass of air traversed relative to overhead.
+    return 1.353 * 1.1 * pow( 0.7, pow( AM, 0.678 ) );
+} 
+
 // Given the current solar angle and the m_highPct value, given the current global percentage for the lights.
 // Air mass reference: http://www.ftexploring.com/solar-energy/air-mass-and-insolation2.htm
 void Leds::updateTimedPct()
@@ -349,29 +400,14 @@ void Leds::updateTimedPct()
         return;
     }
 
-    m_angleFactor = dcos(90.0-m_sunAngle);
+    m_angleFactor = calcAngleFactor(m_sunAngle);
 
-    float AM;
-    float SZA = 90.0 - m_sunAngle;
-    if (SZA < 5)
-        SZA = 5.0;
-    AM = 1.0 / dcos(SZA); // Air Mass: ratio of mass of air traversed relative to overhead.
-    m_amFactor = 1.353 * 1.1 * pow( 0.7, pow( AM, 0.678 ) );
+    m_amFactor = calcAMFactor(m_sunAngle);
     
-    // If in timed mode, scale so that at highest point can be scaled towards m_maxPct.
-    // If the m_normFactor is 1.0 seasonal max diffs are eliminated, and the peak is m_maxPct.
-    // If its 0.0, we use the natural values for the location, and will usually never reach m_maxPct.
-    float fullNorm = (m_calcCycle.peakPct > 0) ? ((float)m_useCycle.peakPct / (float)m_calcCycle.peakPct) : 1.0;
-    if (fullNorm > 1.0) {
-        m_peakFactor = 1.0 + ((fullNorm - 1.0) * m_normFactor);
-    } else {
-        m_peakFactor = 1.0; // Never decrease.
-    }
-
     m_timedPct = floor((m_angleFactor * m_amFactor * m_peakFactor * m_highPct ) + 0.5); 
 
     #if DEBUG_LIGHT
-    Serial.print("DEBUG: updateTimedPct="); Serial.println(m_timedPct);
+    //Serial.print("DEBUG: updateTimedPct="); Serial.println(m_timedPct);
     #endif
 }
 
@@ -393,20 +429,18 @@ unsigned Leds::getLightPct()
 
 void Leds::update()
 {
-    if (day() != m_lastDay) {
+    if (hour() != m_lastHour) {
         // Update cycle at the start of every day.
         m_cycleInvalid = true;
         m_timeIsSet = false;
-        m_lastDay = day();
+        m_lastHour = hour();
     }
     if ((m_lastUpdate + RECALC_TIMED_MS) < millis()) {
         if (m_mode == Timed) {
             updateAll();
         }
         m_lastUpdate = millis();
-        #if 0  // Enable actual light setting.
         pushVals();
-        #endif
     }
 }
 
@@ -415,7 +449,7 @@ void Leds::dumpDay( int numPoints, InStream* stream)
     if (numPoints <= 0)
         return;
 
-    unsigned long tod = (hour() * (60UL*60UL)) + (minute() * 60UL) + second();
+    unsigned long tod = getTimeOfDaySec();
     unsigned long torig =  now();
     unsigned long incr = (24UL * 60UL * 60UL)/(unsigned long)numPoints;
 
