@@ -50,7 +50,7 @@ unsigned Leds::saveSettings()
     addr += sizeof(unsigned long);
     EEPROM.put( addr, m_periodSec );
     addr += sizeof(unsigned long);
-    EEPROM.put( addr, (unsigned char)m_mode );
+    EEPROM.put( addr++, (unsigned char)m_mode );
     EEPROM.put( addr, m_normFactor );
     addr += sizeof(float);
 }
@@ -79,7 +79,7 @@ unsigned Leds::restoreSettings()
     EEPROM.get( addr, m_periodSec );
     addr += sizeof(unsigned long);
     unsigned char mode = 0;
-    EEPROM.get( addr, mode );
+    EEPROM.get( addr++, mode );
     m_mode = (mode < NumModes) ? (Mode)mode : Timed;
     EEPROM.get( addr, m_normFactor );
     addr += sizeof(float);
@@ -119,7 +119,7 @@ void Leds::dimAll( unsigned char pct ) {
         int i = (led - FIRST_LED);
         unsigned int ledVal = ((unsigned)m_ledPcts[m_curSpectrum][i] * val)/100;
         m_curVals[i] = ledVal;
-        //analogWrite( led, ledVal );
+        analogWrite( led, ledVal );
     }
 }
 
@@ -405,6 +405,9 @@ void Leds::updateTimedPct()
     m_amFactor = calcAMFactor(m_sunAngle);
     
     m_timedPct = floor((m_angleFactor * m_amFactor * m_peakFactor * m_highPct ) + 0.5); 
+    if (m_timedPct > 100) {
+        m_timedPct = 100;
+    }
 
     #if DEBUG_LIGHT
     //Serial.print("DEBUG: updateTimedPct="); Serial.println(m_timedPct);

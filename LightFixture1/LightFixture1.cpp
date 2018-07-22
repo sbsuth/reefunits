@@ -74,7 +74,7 @@ Leds leds(LED_EE_ADDR);
 // Time from host.
 RemoteTime remoteTime;
 
-#define EE_SIG (unsigned char)125
+#define EE_SIG (unsigned char)126
 
 // Set the prescale values on the timers:
 // Avoid doing timer 0.
@@ -510,6 +510,7 @@ void processCommand()
                     break;
                 
                 leds.setLedPct( cmd->ID(), ichan, pct );
+                leds.invalidate(false);
 
                 leds.pushVals();
 
@@ -523,6 +524,7 @@ void processCommand()
                     if (cmd->arg(ichan)->getInt(pct) && (pct >= 0) && (pct <= 100))
                         leds.setLedPct( cmd->ID(), ichan, pct );
                 }
+                leds.invalidate(false);
                 break;
             }
             case CmdSetMaxPctssB: {
@@ -533,6 +535,7 @@ void processCommand()
                     if (cmd->arg(ichan-4)->getInt(pct) && (pct >= 0) && (pct <= 100))
                         leds.setLedPct( cmd->ID(), ichan, pct );
                 }
+                leds.invalidate(false);
                 break;
             }
             case CmdSetLevel:   {
@@ -589,6 +592,7 @@ void processCommand()
                 if (cmd->arg(1)->getUnsignedLong(t)) {
                     leds.setPeriodSec(t);
                 }
+                leds.invalidate(true);
                     
                 break;
             }
@@ -642,6 +646,7 @@ void loop() {
 
   if (remoteTime.update( !leds.timeIsSet() ))  {
     leds.setTime( remoteTime.getTime() );
+    leds.invalidate(true);
   }
 
   leds.update();

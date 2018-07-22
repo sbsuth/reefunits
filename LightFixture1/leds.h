@@ -2,8 +2,8 @@
 #define LEDS_H
 
 // LEDs
-#define AMBER_LED       2
-#define RED_LED         3
+#define RED_LED         2
+#define AMBER_LED       3
 #define SKIPPED_LED     4
 #define BLUE_LED        5
 #define ROYAL_BLUE_LED  6
@@ -93,13 +93,13 @@ class Leds
     int getTimezone() const {return m_timezone;}
     void setTimezone( int tz ) {m_timezone = tz; }
 
-    char getCurVal( unsigned char ichan ) const {
+    unsigned char getCurVal( unsigned char ichan ) const {
         return m_curVals[ichan];
     }
     bool ledIndexUsed( unsigned char ichan) const {
         return !SKIP_LED_NUM(ichan);
     }
-    char getLedPct( char spec, unsigned char ichan ) const {
+    unsigned char getLedPct( char spec, unsigned char ichan ) const {
         return m_ledPcts[(spec<0)?m_curSpectrum:spec][ichan];
     }
     void setLedPct( char spec, unsigned char ichan, unsigned char val ) {
@@ -154,8 +154,8 @@ class Leds
     unsigned restoreSettings();
   protected:
     unsigned        m_confAddr;
-    char            m_curVals[NUM_LED_NUMS];
-    char            m_ledPcts[NUM_SPECTRUMS][NUM_LED_NUMS];
+    unsigned char   m_curVals[NUM_LED_NUMS];
+    unsigned char   m_ledPcts[NUM_SPECTRUMS][NUM_LED_NUMS];
     unsigned char   m_curSpectrum;
     unsigned char   m_highPct;
     unsigned char   m_lowPct;
