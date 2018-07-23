@@ -107,11 +107,12 @@ class Leds
     }
     unsigned char getCurSpectrum() const { return m_curSpectrum; }
     void setCurSpectrum( unsigned char spec ) {m_curSpectrum = spec; }
+    void incrSpectrum() {m_curSpectrum = (m_curSpectrum + 1) % NUM_SPECTRUMS; }
 
     void update();
 
     unsigned long getTimeSec() const;
-    unsigned long getTimeOfDaySec() const;
+    unsigned long getTimeOfDaySec(bool effective=false) ;
     unsigned long getDayTime() const;
     unsigned char getHighPct() const { return m_highPct; }
     void setHighPct( unsigned char pct ) {m_highPct = pct; }
@@ -133,6 +134,7 @@ class Leds
     unsigned long toDaySec( unsigned long sec ) { return sec - m_dayStart; }
     Mode getMode() const {return m_mode;}
     void setMode( Mode m ) {m_mode = m;}
+    Mode incrMode() { m_mode = (Mode)(((int)m_mode+1) % NumModes);}
 
     const PeriodData& getCalculatedCycle() const { return m_calcCycle; }
     const PeriodData& getUsedCycle() const { return m_useCycle; }
@@ -171,7 +173,7 @@ class Leds
     float           m_latitude;
     float           m_longitude;
     char            m_timezone; // Timezone delta for lat and long.
-    unsigned long   m_offsetSec;
+    long            m_offsetSec;
     unsigned long   m_sunriseSec;
     unsigned long   m_periodSec;
     PeriodData      m_calcCycle;
@@ -190,7 +192,7 @@ class Leds
                     }
     long            calcTimeAdjustment();
     long            adjustTime();
-    void            restoreTime( unsigned long delta );
+    void            restoreTime( long delta );
     unsigned        getLightPct();
     float           getSunAngleForTime( unsigned long t );
     unsigned long   binsearchTime( unsigned long start, unsigned long end, float target, float (Leds::*func)( unsigned long )  );

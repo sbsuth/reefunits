@@ -41,8 +41,8 @@
 #define DOWN_BUTTON_IN   33
 #define SPEED_PWM        4
 #define CURRENT_LED_OUT  29
-#define BRIGHT_BUTTON_IN 49
-#define DIM_BUTTON_IN    47
+#define MODE_BUTTON_IN   49
+#define SPECTRUM_BUTTON_IN 47
 #define RF24_CE          25
 #define RF24_CSN         23
 
@@ -61,6 +61,8 @@ AvgThresh<16,int> liftCurrent(500,495,515);
 
 static Switch upButton( UP_BUTTON_IN );
 static Switch downButton( DOWN_BUTTON_IN );
+static Switch modeButton( MODE_BUTTON_IN );
+static Switch spectrumButton( SPECTRUM_BUTTON_IN );
 
 
 // Network objects
@@ -126,8 +128,8 @@ static bool restoreSettings()
 
 // the setup function runs once when you press reset or power the board
 void setup() {
-  #if DEBUG_STARTUP
   Serial.begin(115200);
+  #if DEBUG_STARTUP
   Serial.println(F("Start"));
   #endif
 
@@ -147,6 +149,8 @@ void setup() {
   // Do these after network.being() to avoid mysterious interference....
   upButton.setup();
   downButton.setup();
+  modeButton.setup();
+  spectrumButton.setup();
   
   // Ethernet startup.
   rf24.init();
@@ -276,7 +280,7 @@ static void getHeightCmd( Command* cmd )
 
 static void getStatus( Command* cmd )
 {
-    StaticJsonBuffer<450> jsonBuffer;
+    StaticJsonBuffer<470> jsonBuffer;
 
     JsonObject& json = jsonBuffer.createObject();
     json["height"] = curHeight / 1000;
@@ -295,6 +299,7 @@ static void getStatus( Command* cmd )
     json["norm_factor"] = leds.getNormFactor();
     json["peak_factor"] = leds.getPeakFactor();
     json["tod_sec"] = leds.getTimeOfDaySec();
+    json["eff_tod"] = leds.getTimeOfDaySec(true);
     json["now"] = leds.getTimeSec();
     json["sr_sec"] = leds.getSunriseSec();
     json["period_sec"] = leds.getPeriodSec();
@@ -302,7 +307,7 @@ static void getStatus( Command* cmd )
     cmd->ack( json );
     #if 0
     https://arduinojson.org/v5/assistant/
-    442
+    465
     {
       "height":123,
       "moving":true,
@@ -320,6 +325,7 @@ static void getStatus( Command* cmd )
       "peak_factor": 0.78,
       "norm_factor": 0.78,
       "tod_sec": 1234,
+      "eff_tod": 1234,
       "now": 1234,
       "sr_sec": 0,
       "period_sec": 0,
@@ -628,11 +634,8 @@ void processCommand()
     }
 }
 
-
-
-// the loop function runs over and over again forever
-void loop() {
-  rf24.update();
+void updateLift()
+{
   upButton.update();
   downButton.update();
   if (upButton.changed() && upButton.isOn()) {
@@ -643,15 +646,40 @@ void loop() {
   }
   updateFixtureRunning();
   updateHeight();
+}
+
+void updateLightButtons()
+{
+  modeButton.update();
+  spectrumButton.update();
+  if (modeButton.changed() && modeButton.isOn()) {
+    leds.incrMode();
+    leds.invalidate();
+  }
+  if (spectrumButton.changed() && spectrumButton.isOn()) {
+    leds.incrSpectrum();
+    leds.invalidate();
+  }
+}
+
+
+// the loop function runs over and over again forever
+void loop() {
+  rf24.update();
+
+  updateLift();
+
 
   if (remoteTime.update( !leds.timeIsSet() ))  {
     leds.setTime( remoteTime.getTime() );
     leds.invalidate(true);
   }
 
-  leds.update();
+  updateLightButtons();
 
   processCommand();
+
+  leds.update();
 
   digitalWrite(UP_LED_OUT, goingUp);  
   digitalWrite(DOWN_LED_OUT, goingDown);
