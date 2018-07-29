@@ -127,7 +127,15 @@ void Leds::dimAll( unsigned char pct ) {
         if (SKIP_LED(led)) 
             continue;
         int i = (led - FIRST_LED);
-        unsigned int ledVal = ((unsigned)m_ledPcts[m_curSpectrum][i] * val)/100;
+        unsigned char ledPct = m_ledPcts[m_curSpectrum][i];
+        unsigned int ledVal = ((unsigned)ledPct * val)/100;
+        
+        // If we would be off, but we have a positive value, then set 
+        // colors >=50% to 1.
+        // This gives us dominant colors on at a min when they would round down to 0.
+        if ((ledVal == 0) && (ledPct >= 50) && (val > 0))
+            ledVal = 1;
+
         m_curVals[i] = ledVal;
         analogWrite( led, ledVal );
     }
@@ -141,7 +149,7 @@ void Leds::dimOne( int led, unsigned char pct ) {
         pct = 100;
     if ((led < FIRST_LED) || (led > LAST_LED) || SKIP_LED(led))
         return;
-    unsigned char val = ((unsigned)pct * 255)/100;
+    unsigned int val = ((unsigned long)pct * 255UL)/100UL;
     int i = (led - FIRST_LED);
     m_curVals[i] = val;
     analogWrite( led, val );
@@ -286,139 +294,138 @@ void Leds::updateCycle( bool force )
     Serial.print("DEBUG: sunset=");Serial.println(toDaySec(m_calcCycle.sunsetSec));
     #endif
 
-    // Presume max is right between.
-    // Get the natural intensity pct, considering angle and air mass.
-    m_calcCycle.peakSec = m_calcCycle.sunriseSec + ((m_calcCycle.sunsetSec - m_calcCycle.sunriseSec)/2);
-    float peakAngle = getSunAngleForTime( m_calcCycle.peakSec );
-    m_calcCycle.peakPct = floor( calcAngleFactor( peakAngle ) * calcAMFactor( peakAngle ) * 100.0);
-    
+        // Presume max is right between.
+        // Get the natural intensity pct, considering angle and air mass.
+        m_calcCycle.peakSec = m_calcCycle.sunriseSec + ((m_calcCycle.sunsetSec - m_calcCycle.sunriseSec)/2);
+        float peakAngle = getSunAngleForTime( m_calcCycle.peakSec );
+        m_calcCycle.peakPct = floor( calcAngleFactor( peakAngle ) * calcAMFactor( peakAngle ) * 100.0);
+        
 
+        // calculate the used sunrise and sunset and set m_offsetSec to the linear offset for all 
+        // times.  Any offset for specified photo period will be calcualted based on the current time.
+        // The sense of m_offsetSec is such that usedTimed after calc'd times are positive.
+        m_useCycle.sunriseSec = m_calcCycle.sunriseSec;
+        m_useCycle.sunsetSec = m_calcCycle.sunsetSec;
+        m_useCycle.peakPct = m_calcCycle.peakPct;
 
-    // calculate the used sunrise and sunset and set m_offsetSec to the linear offset for all 
-    // times.  Any offset for specified photo period will be calcualted based on the current time.
-    // The sense of m_offsetSec is such that usedTimed after calc'd times are positive.
-    m_useCycle.sunriseSec = m_calcCycle.sunriseSec;
-    m_useCycle.sunsetSec = m_calcCycle.sunsetSec;
-    m_useCycle.peakPct = m_calcCycle.peakPct;
+        // Calc change in period.  La=onger period is positive.
+        long deltaPeriod = 0;
+        if (m_periodSec != 0)
+            deltaPeriod = ((long)m_periodSec - ((long)m_calcCycle.sunsetSec - (long)m_calcCycle.sunriseSec));
 
-    // Calc change in period.  La=onger period is positive.
-    long deltaPeriod = 0;
-    if (m_periodSec != 0)
-        deltaPeriod = ((long)m_periodSec - ((long)m_calcCycle.sunsetSec - (long)m_calcCycle.sunriseSec));
-
-    m_useCycle.peakSec = m_calcCycle.peakSec;
-    if (m_sunriseSec) {
-        // Fix sunrise, and use any specified period delta to adjust sunset.
-        m_offsetSec = (m_sunriseSec - toDaySec(m_calcCycle.sunriseSec));
-        m_useCycle.sunriseSec += m_offsetSec;
-        m_useCycle.sunsetSec += m_offsetSec;
-        if (m_periodSec) {
-            m_useCycle.sunsetSec += deltaPeriod;
+        if (m_sunriseSec) {
+            // Fix sunrise, and use any specified period delta to adjust sunset.
+            m_offsetSec = (m_sunriseSec - toDaySec(m_calcCycle.sunriseSec));
+            m_useCycle.sunriseSec += m_offsetSec;
+            m_useCycle.sunsetSec += m_offsetSec;
+            if (m_periodSec) {
+                m_useCycle.sunsetSec += deltaPeriod;
+            }
+        } else if (m_periodSec) {
+            // Adjust sunrise and sunset so that period change is split before sunrise and after sunset.
+            m_useCycle.sunriseSec -= deltaPeriod/2;
+            m_useCycle.sunsetSec += deltaPeriod/2;
+            m_offsetSec = -deltaPeriod/2;
         }
-    } else if (m_periodSec) {
-        // Adjust sunrise and sunset so that period change is split before sunrise and after sunset.
-        m_useCycle.sunriseSec -= deltaPeriod/2;
-        m_useCycle.sunsetSec += deltaPeriod/2;
-        m_offsetSec = -deltaPeriod/2;
-    }
-    m_useCycle.peakSec = m_useCycle.sunriseSec + ((m_useCycle.sunsetSec - m_useCycle.sunriseSec)/2);
-    m_useCycle.peakPct = 100;
-#if 0
-Serial.print("HEY: m_sunriseSec=");Serial.println(m_sunriseSec);
-Serial.print("HEY: m_periodSec=");Serial.println(m_periodSec);
-Serial.print("HEY: delta=");Serial.println(delta);
-Serial.print("HEY: m_calcCycle.sunriseSec=");Serial.println(m_calcCycle.sunriseSec);
-Serial.print("HEY: m_calcCycle.sunsetSec=");Serial.println(m_calcCycle.sunsetSec);
-Serial.print("HEY: m_useCycle.sunriseSec=");Serial.println(m_useCycle.sunriseSec);
-Serial.print("HEY: toDaySec(m_useCycle.sunriseSec)=");Serial.println(toDaySec(m_useCycle.sunriseSec));
-Serial.print("HEY: Set m_offsetSec=");Serial.println(m_offsetSec);
-#endif
-    
-    // Calculate m_peakFactor, which will scale between values calculated during the say, and the
-    // peak percent (which is fixed at 100).
-    // If the m_normFactor is 1.0 seasonal max diffs are eliminated, and the peak is m_maxPct.
-    // If its 0.0, we use the natural values for the location, and will usually never reach m_maxPct.
-    float fullNorm = (m_calcCycle.peakPct > 0) ? ((float)m_useCycle.peakPct / (float)m_calcCycle.peakPct) : 1.0;
-    if (fullNorm > 1.0) {
-        m_peakFactor = 1.0 + ((fullNorm - 1.0) * m_normFactor);
-    } else {
-        m_peakFactor = 1.0; // Never decrease.
-    }
-
-    // Restore time, and recalc sun angle with ajusted time.
-    setTime(oldTime);
-    updateSunAngle();
-    updateTimedPct();
-
-    #if DEBUG_LIGHT
-    Serial.print("DEBUG: updateCycle, sunrise="); 
-    Serial.print( toDaySec(m_calcCycle.sunriseSec));
-    Serial.print(", sunset="); 
-    Serial.print( toDaySec(m_calcCycle.sunsetSec));
-    Serial.print(", peak="); 
-    Serial.println( toDaySec(m_calcCycle.peakPct));
-    Serial.print(", delay(ms)="); 
-    Serial.println( millis() - tbegin );
+        m_useCycle.peakSec = m_useCycle.sunriseSec + ((m_useCycle.sunsetSec - m_useCycle.sunriseSec)/2);
+        m_useCycle.peakPct = 100;
+    #if 0
+    Serial.print("HEY: m_sunriseSec=");Serial.println(m_sunriseSec);
+    Serial.print("HEY: m_periodSec=");Serial.println(m_periodSec);
+    Serial.print("HEY: delta=");Serial.println(delta);
+    Serial.print("HEY: m_calcCycle.sunriseSec=");Serial.println(m_calcCycle.sunriseSec);
+    Serial.print("HEY: m_calcCycle.sunsetSec=");Serial.println(m_calcCycle.sunsetSec);
+    Serial.print("HEY: m_useCycle.sunriseSec=");Serial.println(m_useCycle.sunriseSec);
+    Serial.print("HEY: toDaySec(m_useCycle.sunriseSec)=");Serial.println(toDaySec(m_useCycle.sunriseSec));
+    Serial.print("HEY: Set m_offsetSec=");Serial.println(m_offsetSec);
     #endif
-}
+        
+        // Calculate m_peakFactor, which will scale between values calculated during the say, and the
+        // peak percent (which is fixed at 100).
+        // If the m_normFactor is 1.0 seasonal max diffs are eliminated, and the peak is m_maxPct.
+        // If its 0.0, we use the natural values for the location, and will usually never reach m_maxPct.
+        float fullNorm = (m_calcCycle.peakPct > 0) ? ((float)m_useCycle.peakPct / (float)m_calcCycle.peakPct) : 1.0;
+        if (fullNorm > 1.0) {
+            m_peakFactor = 1.0 + ((fullNorm - 1.0) * m_normFactor);
+        } else {
+            m_peakFactor = 1.0; // Never decrease.
+        }
 
-// Account for the offset time, and if within the photo period, the period time.
-// If the usedTime is after the calcualted time, a negative number should be returned.
-// The m_offsetSec value is a psotive number if used sunrise is later than calc'd sunrise,
-// so the base value is -m_offsetSec.  If there's a spec'd period, then the ratio between
-// the two is used, together with the dietance we are into the day to give an offset for the 
-// current time.  
-long Leds::calcTimeAdjustment()
-{
-    // If outide of both ranges, don't worry about scaling.
-    unsigned long nowSec = now();
-#if 0
-    if (   ((nowSec < m_calcCycle.sunriseSec) || (nowSec > m_calcCycle.sunsetSec))
-        && ((nowSec < m_useCycle.sunriseSec) || (nowSec > m_useCycle.sunsetSec)) ) {
-        return -m_offsetSec;
+        // Restore time, and recalc sun angle with ajusted time.
+        setTime(oldTime);
+        updateSunAngle();
+        updateTimedPct();
+
+        #if DEBUG_LIGHT
+        Serial.print("DEBUG: updateCycle, sunrise="); 
+        Serial.print( toDaySec(m_calcCycle.sunriseSec));
+        Serial.print(", sunset="); 
+        Serial.print( toDaySec(m_calcCycle.sunsetSec));
+        Serial.print(", peak="); 
+        Serial.println( toDaySec(m_calcCycle.peakPct));
+        Serial.print(", delay(ms)="); 
+        Serial.println( millis() - tbegin );
+        #endif
     }
-#endif
-    
 
-    unsigned long useRange = (m_useCycle.sunsetSec - m_useCycle.sunriseSec);
-    unsigned long calcRange = (m_calcCycle.sunsetSec - m_calcCycle.sunriseSec);
-    if (calcRange == useRange) {
-        return -m_offsetSec;
+    // Account for the offset time, and if within the photo period, the period time.
+    // If the usedTime is after the calcualted time, a negative number should be returned.
+    // The m_offsetSec value is a psotive number if used sunrise is later than calc'd sunrise,
+    // so the base value is -m_offsetSec.  If there's a spec'd period, then the ratio between
+    // the two is used, together with the dietance we are into the day to give an offset for the 
+    // current time.  
+    long Leds::calcTimeAdjustment()
+    {
+        // If outide of both ranges, don't worry about scaling.
+        unsigned long nowSec = now();
+
+        // If before use sunrise, adjustment is just offset.
+        if (nowSec < m_useCycle.sunriseSec) {
+            return -m_offsetSec;
+        }
+
+        unsigned long useRange = (m_useCycle.sunsetSec - m_useCycle.sunriseSec);
+        unsigned long calcRange = (m_calcCycle.sunsetSec - m_calcCycle.sunriseSec);
+        if (calcRange == useRange) {
+            return -m_offsetSec;
+        }
+
+        if (useRange == 0) {
+            return -m_offsetSec; // div by zero protection.
+        }
+
+        // Ratio is the difference between the ranges relative to the used range 
+        // so that we get a use distance given a calc distance.
+        // The adjustment is based on the distance past calc'd sunrise, adjusted for offset.
+        float ratio = ((float)useRange - (float)calcRange)/(float)useRange;
+        long scaleAdj = (((long)nowSec - m_offsetSec) - (long)m_calcCycle.sunriseSec) * ratio;
+        long result = -(m_offsetSec + scaleAdj);
+    #if 0
+    Serial.print("HEY: ratio=");Serial.println(ratio);
+    Serial.print("HEY: scaleAdj=");Serial.println(scaleAdj);
+    Serial.print("HEY: m_offsetSec=");Serial.println(m_offsetSec);
+    Serial.print("HEY: result=");Serial.println(result);
+    #endif
+
+
+        return result;
     }
 
-    if (useRange == 0) {
-        return -m_offsetSec; // div by zero protection.
+    long Leds::adjustTime()
+    {
+        if (m_cycleInvalid || !m_timeIsSet)
+            return 0;
+
+        long adj = calcTimeAdjustment();
+
+        ::adjustTime(adj);
+
+        return adj;
     }
 
-    // Ratio is the difference between the ranges relative to the used range 
-    // so that we get a use distance given a calc distance.
-    // The adjustment is based on the distance past calc'd sunrise, adjusted for offset.
-    float ratio = ((float)useRange - (float)calcRange)/(float)useRange;
-    long scaleAdj = (((long)nowSec - m_offsetSec) - (long)m_calcCycle.sunriseSec) * ratio;
-    long result = -(m_offsetSec + scaleAdj);
-#if 0
-Serial.print("HEY: ratio=");Serial.println(ratio);
-Serial.print("HEY: scaleAdj=");Serial.println(scaleAdj);
-Serial.print("HEY: m_offsetSec=");Serial.println(m_offsetSec);
-Serial.print("HEY: result=");Serial.println(result);
-#endif
-
-
-    return result;
-}
-
-long Leds::adjustTime()
-{
-    long adj = calcTimeAdjustment();
-
-    ::adjustTime(adj);
-
-    return adj;
-}
-
-void Leds::restoreTime( long delta )
-{
-    ::adjustTime( -delta );
+    void Leds::restoreTime( long delta )
+    {
+        ::adjustTime( -delta );
 }
 
 float Leds::calcAngleFactor( float sunAngle )
@@ -453,6 +460,11 @@ void Leds::updateTimedPct()
     if (m_timedPct > 100) {
         m_timedPct = 100;
     }
+
+    //  Special case near 0 such that if there is a positive angle, and non-zero
+    //  factors, we use 1%.
+    if ((m_timedPct == 0) && (m_sunAngle > 0.0) && (m_highPct > 0.0) && (m_peakFactor > 0.0))
+        m_timedPct = 1;
 
     #if DEBUG_LIGHT
     //Serial.print("DEBUG: updateTimedPct="); Serial.println(m_timedPct);
@@ -575,14 +587,14 @@ unsigned long Leds::binsearchTime( unsigned long start, unsigned long end, float
     int maxIters = (end - start) / minSep;
 
     for ( int iter=0; iter < maxIters; iter++ ) {
-        unsigned tsep = (end - start);
+        unsigned long tsep = (end - start);
         if (tsep < minSep)
             break;
 
         if (dir < 0) {
             dir = (vstart < vend) ? 1 : 0;
         }
-        unsigned long mid = start + ((end - start)/2);
+        unsigned long mid = start + ((end - start)/2UL);
         float vmid = (this->*func)(mid);
         
         if (dir) {
@@ -603,6 +615,6 @@ unsigned long Leds::binsearchTime( unsigned long start, unsigned long end, float
             }
         }
     }
-    return start + ((end - start)/2);
+    return start + ((end - start)/2UL);
 }
 

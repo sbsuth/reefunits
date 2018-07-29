@@ -186,9 +186,9 @@ class Leds
     void            updateTimedPct();
     void            updateCycle( bool force=false );
     void            updateAll() {
+                        updateCycle();
                         updateSunAngle();
                         updateTimedPct();
-                        updateCycle();
                     }
     long            calcTimeAdjustment();
     long            adjustTime();
