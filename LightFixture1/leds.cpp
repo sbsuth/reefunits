@@ -352,7 +352,7 @@ void Leds::updateCycle( bool force )
         }
 
         // Restore time, and recalc sun angle with ajusted time.
-        setTime(oldTime);
+        tempSetTime(oldTime);
         updateSunAngle();
         updateTimedPct();
 
@@ -495,7 +495,7 @@ void Leds::update()
         m_timeIsSet = false;
         m_lastHour = hour();
     }
-    if (((m_lastUpdate + RECALC_TIMED_MS) < millis()) || m_cycleInvalid) {
+    if ((((m_lastUpdate + RECALC_TIMED_MS) < millis()) || m_cycleInvalid) && m_timeIsSet) {
         updateAll();
         m_lastUpdate = millis();
         pushVals();
