@@ -18,13 +18,13 @@ static int level=0;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
-    Serial.begin(57600);
+  Serial.begin(115200);
     #if DEBUG_STARTUP
     Serial.println(F("Start"));
     #endif
 
     pinMode( DIM_PIN, OUTPUT );
-    analogWrite( DIM_PIN, 0 );
+    digitalWrite( DIM_PIN, 0 );
     level = 0;
 
     #if DEBUG_STARTUP
@@ -70,9 +70,21 @@ void processCommand()
 
             case CmdDim: {
                 int pct;
-                if (cmd->arg(0)->getInt(pct) && (pct >= 0) && (pct < 100)) {
-                    analogWrite( DIM_PIN, (pct * 256)/100 );
-                    level = pct;
+                if (cmd->arg(0)->getInt(pct)) {
+                    int val = (pct * 255)/100;
+                    if (val > 255) {
+                        digitalWrite( DIM_PIN, 1);
+                        Serial.print("Set pin ");Serial.print(DIM_PIN);Serial.println(" to digital 1");
+                        level = 100;
+                    } else if (val <= 0) {
+                        digitalWrite( DIM_PIN, 0);
+                        Serial.print("Set pin ");Serial.print(DIM_PIN);Serial.println(" to digital 0");
+                        level = 0;
+                    } else {
+                        analogWrite( DIM_PIN, val);
+                        Serial.print("Set pin ");Serial.print(DIM_PIN);Serial.write(" to ");Serial.println(val);
+                        level = pct;
+                    }
                 }
                 break;
             }

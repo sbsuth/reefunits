@@ -1,8 +1,7 @@
 PROJECT = test
 MCU := atmega328p
 ARDUINO_VERSION := 10607
-PORT := \\.\COM7
-UPLOAD_RATE := 57600
+PORT := \\.\COM4
 
 include ../utils/Makefile.arduino
 
