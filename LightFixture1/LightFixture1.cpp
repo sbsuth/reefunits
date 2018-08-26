@@ -54,16 +54,6 @@
 #define LED_EE_ADDR 16
 
 
-// Device status/.
-bool goingUp = false;
-bool goingDown = false;
-AvgThresh<16,int> liftCurrent(500,495,515);
-
-static Switch upButton( UP_BUTTON_IN );
-static Switch downButton( DOWN_BUTTON_IN );
-static Switch modeButton( MODE_BUTTON_IN );
-static Switch spectrumButton( SPECTRUM_BUTTON_IN );
-
 
 // Network objects
 RF24IPInterface rf24( 4, RF24_CE, RF24_CSN, RF24_PA_LOW );
@@ -76,7 +66,18 @@ Leds leds(LED_EE_ADDR);
 // Time from host.
 RemoteTime remoteTime;
 
-#define EE_SIG (unsigned char)126
+// Device status/.
+bool goingUp = false;
+bool goingDown = false;
+AvgThresh<16,int> liftCurrent(500,495,515);
+
+static Switch upButton( UP_BUTTON_IN );
+static Switch downButton( DOWN_BUTTON_IN );
+static Switch modeButton( MODE_BUTTON_IN );
+static Switch spectrumButton( SPECTRUM_BUTTON_IN );
+
+
+#define EE_SIG (unsigned char)127
 
 // Set the prescale values on the timers:
 // Avoid doing timer 0.
@@ -466,6 +467,14 @@ void processCommand()
                 }
                 break;
             }
+            case CmdDimOne: {
+                int pct;
+                if (cmd->arg(0)->getInt(pct)) {
+                    leds.setMode( Leds::External );
+                    leds.dimOne(cmd->ID(),pct);
+                }
+                break;
+            }
             case CmdSetLoc: {
                 // Latitude, longitude, timezone.
                 float l;
@@ -539,6 +548,17 @@ void processCommand()
                         continue;
                     int pct = 0;
                     if (cmd->arg(ichan-4)->getInt(pct) && (pct >= 0) && (pct <= 100))
+                        leds.setLedPct( cmd->ID(), ichan, pct );
+                }
+                leds.invalidate(false);
+                break;
+            }
+            case CmdSetMaxPctssC: {
+                for ( int ichan=8; ichan < 12; ichan++ ) {
+                    if (SKIP_LED_NUM(ichan))
+                        continue;
+                    int pct = 0;
+                    if (cmd->arg(ichan-8)->getInt(pct) && (pct >= 0) && (pct <= 100))
                         leds.setLedPct( cmd->ID(), ichan, pct );
                 }
                 leds.invalidate(false);

@@ -144,14 +144,14 @@ void Leds::dimAll( unsigned char pct ) {
 
 // Set level of the given led index to the given pct.
 // Ignores the m_ledPcts for the LED.
-void Leds::dimOne( int led, unsigned char pct ) {
+void Leds::dimOne( int iled, unsigned char pct ) {
+    int led = (iled + FIRST_LED);
     if (pct > 100)
         pct = 100;
     if ((led < FIRST_LED) || (led > LAST_LED) || SKIP_LED(led))
         return;
     unsigned int val = ((unsigned long)pct * 255UL)/100UL;
-    int i = (led - FIRST_LED);
-    m_curVals[i] = val;
+    m_curVals[iled] = val;
     analogWrite( led, val );
 }
 

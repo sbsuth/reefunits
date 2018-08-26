@@ -10,13 +10,14 @@
 #define VIOLET_LED      7
 #define WHITE_LED       8
 #define CYAN_LED        9 
+#define BLUE_STRIP     13
 // Cyan sometimes labeled turquois
 
 #define FIRST_LED       2
-#define LAST_LED        9
+#define LAST_LED       13
 #define NUM_LED_NUMS    ((LAST_LED - FIRST_LED) + 1)
-#define NUM_LEDS        (LAST_LED - FIRST_LED)
-#define SKIP_LED(id)    (id == SKIPPED_LED)
+#define NUM_LEDS        8
+#define SKIP_LED(id)    ((id == SKIPPED_LED) || (id == 10) || (id == 11) || (id == 12))
 #define SKIP_LED_NUM(i)    SKIP_LED(i + FIRST_LED)
 
 
