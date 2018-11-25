@@ -5,16 +5,18 @@
 #define DEBUG_STARTUP 1
 #define DEBUG_CHANGES 1
 #define DEBUG_CMD 1
+#define DEBUG_TEMP 1
 
 
 #include <Arduino.h>
 
 #include "Command.h"
+#include "DS18B20.h"
 
-static int level=0;
+#define ONE_WIRE_DATA_PIN A0
 
 
-#define DIM_PIN 5
+DS18B20<2> tempSensors( ONE_WIRE_DATA_PIN, 10, 1000 );
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -23,9 +25,7 @@ void setup() {
     Serial.println(F("Start"));
     #endif
 
-    pinMode( DIM_PIN, OUTPUT );
-    digitalWrite( DIM_PIN, 0 );
-    level = 0;
+    tempSensors.setup();
 
     #if DEBUG_STARTUP
     Serial.println(F("Ready"));
@@ -35,12 +35,6 @@ void setup() {
 static ArduinoSerialIO sis;
 static CommandParser serialParser( g_commandDescrs, &sis );
 static Command serialCmd;
-
-static void getStatus( Command* cmd, int ipump )
-{
-    Serial.print("Level=");
-    Serial.println(level);
-}
 
 void processCommand()
 {
@@ -64,28 +58,19 @@ void processCommand()
             case CmdPing:
                 break;
 
-            case CmdStatus:
-                getStatus(cmd,-1);
+            case CmdSetRes: {
+				int res;
+				if (cmd->arg(0)->getInt(res) && (res >= 9) && (res <= 12) ) {
+                    tempSensors.setResolution(res);
+				}
                 break;
-
-            case CmdDim: {
-                int pct;
-                if (cmd->arg(0)->getInt(pct)) {
-                    int val = (pct * 255)/100;
-                    if (val > 255) {
-                        digitalWrite( DIM_PIN, 1);
-                        Serial.print("Set pin ");Serial.print(DIM_PIN);Serial.println(" to digital 1");
-                        level = 100;
-                    } else if (val <= 0) {
-                        digitalWrite( DIM_PIN, 0);
-                        Serial.print("Set pin ");Serial.print(DIM_PIN);Serial.println(" to digital 0");
-                        level = 0;
-                    } else {
-                        analogWrite( DIM_PIN, val);
-                        Serial.print("Set pin ");Serial.print(DIM_PIN);Serial.write(" to ");Serial.println(val);
-                        level = pct;
-                    }
-                }
+            }
+            case CmdGetTemp: {
+				int unit;
+				if (cmd->arg(0)->getInt(unit)) {
+                    Serial.print("Temp #1:"); Serial.print(tempSensors.getTemp(0)); Serial.println("F");
+                    Serial.print("Temp #2:"); Serial.print(tempSensors.getTemp(1)); Serial.println("F");
+				}
                 break;
             }
             default:
@@ -110,5 +95,12 @@ void processCommand()
 // the loop function runs over and over again forever
 void loop() {
   processCommand();
+
+  if (tempSensors.update()) {
+    #if DEBUG_CHANGES
+    Serial.print("Temp #1:"); Serial.print(tempSensors.getTemp(0)); Serial.println("F");
+    Serial.print("Temp #2:"); Serial.print(tempSensors.getTemp(1)); Serial.println("F");
+    #endif
+  }
 }
 

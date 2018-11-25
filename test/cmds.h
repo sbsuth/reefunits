@@ -6,8 +6,8 @@
 #else
 
 X(  CmdPing,        "ping", false,  CmdArgNone )
-X(  CmdStatus,      "stat", false,  CmdArgNone )
-X(  CmdDim,         "dim",  false,  CmdArgInt )
+X(  CmdSetRes,      "res",  false,  CmdArgInt )
+X(  CmdGetTemp,     "get",  false,  CmdArgInt )
 X(  CmdNone,        "nop",  false,  CmdArgNone )
 
 #endif
