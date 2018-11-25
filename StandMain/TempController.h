@@ -1,15 +1,21 @@
 #ifndef HEATER_H
 #define HEATER_H
 
+#define DEBUG_TEMP 0
+
 #include <Arduino.h>
 #include "Avg.h"
+#include "DS18B20.h"
 
-#define DEBUG_TEMP 0
+// Rejection values for readings.
+#define LOWER_BAD_F 30.0
+#define UPPER_BAD_F 100.0
+
 
 class TempController
 {
   public:
-    TempController(   int ctrlPin, int temp1Pin, int temp2Pin, unsigned confAddr );
+    TempController(   int ctrlPin, int tempPin, int tempRes, unsigned confAddr );
     void setup( bool useSettings );
     bool update();
     static unsigned ee_size();
@@ -28,13 +34,10 @@ class TempController
     }
     unsigned long timeSinceLastOnOff();
 
-    float curTemp( int itherm=-1 );
+    float curTemp( int itherm=-1, bool raw=false );
 
-    unsigned char pinFor( unsigned itherm ) {
-        if (itherm < 2)
-            return m_tempPin[itherm];
-        else
-            return 0;
+    bool isGoodTemp( float TF ) {
+        return (TF > LOWER_BAD_F) && (TF < UPPER_BAD_F);
     }
 
     void setSetTemp(   float TF ) {
@@ -45,6 +48,7 @@ class TempController
     }
     void setSamplePeriod( unsigned sp ) {
         m_samplePeriod = sp;
+        m_tempSensors.setPeriodMs(sp);
     }
     unsigned getSamplePeriod() {
         return m_samplePeriod; 
@@ -57,7 +61,6 @@ class TempController
     }
     bool isCalibrated( int itherm=-1 );
 
-    float adc2R( unsigned adc );
     static float k2f( double K ) {
         return ((K - 273.15)/.5556) + 32;
     }
@@ -70,17 +73,24 @@ class TempController
     float calcTemp( float R, unsigned itherm );
     void calcOnOff();
 
-    static constexpr float    VREF       = 2.2;
-    static const unsigned R_pulldown = 5100;
-
-    bool calStep( unsigned step, unsigned itherm, float TF );
-
+    bool setOffset( unsigned itherm, float TF ) {
+        if (itherm < 2) {
+            m_A[itherm] = TF;
+            return true;
+        } else {
+            return false;
+        }
+    }
+    bool calUsingTemp( float TF );
     void ackCalConsts( class Command* cmd );
+    float getOffset( int devIndex );
+
   protected:
     unsigned char   m_ctrlPin;
-    unsigned char   m_tempPin[2];
+    unsigned char   m_tempPin;
     unsigned        m_confAddr;
-    Avg<32,float>   m_tempValue[2];
+    DS18B20<2>      m_tempSensors;
+    float           m_tempValue[2];
     bool            m_heatOn;
     unsigned long   m_lastOnOff;
     unsigned long   m_lastSampleTime; // Time of last read.
@@ -95,47 +105,6 @@ class TempController
     float           m_A[2];      // Cal constant A for each thermistor.
     float           m_B[2];      // Cal constant B for each thermistor.
     float           m_C[2];      // Cal constant C for each thermistor.
-
-    struct CalSession 
-    {
-        CalSession()
-            : m_tc(0), m_nspec(0)
-        {}
-        void setTC( TempController* tc ) {
-            m_tc = tc;
-        }
-        void reset() {
-            m_nspec = 0;
-        }
-        unsigned nextStep() {
-            return m_nspec;
-        }
-        bool addPoint( unsigned adc, float TF ) {
-            if (m_nspec > 2)
-                return false;
-
-            m_R[m_nspec] = m_tc->adc2R(adc);
-            m_TF[m_nspec] = TF;
-
-            #if DEBUG_TEMP
-            Serial.print("TEMP: Cal step ");Serial.print(m_nspec);Serial.print(", adc=");Serial.print(adc);Serial.print(", R=");Serial.print(m_R[m_nspec]);Serial.print(", TF="); Serial.println(m_TF[m_nspec]);
-            #endif
-
-            m_nspec++;
-            return ready();
-        }
-        bool ready() {
-            return (m_nspec == 3);
-        }
-    
-        TempController* m_tc;
-        unsigned        m_nspec;
-        float           m_R[3];
-        float           m_TF[3];
-    };
-    bool setCal( const CalSession& data, unsigned itherm );
-
-    CalSession      m_cal[2];
 
 };
 

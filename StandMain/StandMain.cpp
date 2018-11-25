@@ -31,15 +31,14 @@
 
 
 #define HEAT_ON          10
-#define DISPLAY_TEMP     A1
-#define SUMP_TEMP        A0
+#define TEMP_DATA        A1
 #define RF24_CE          12
 #define RF24_CSN         13
 #define TRIG             39
 #define ECHO             41
 #define FLOAT_SW         37
 
-
+#define TEMP_RES         10  // 9-12
 
 
 // Network objects
@@ -76,7 +75,7 @@ ControllablePump ph2(      7,   1,      0,  PUMP_EE_ADDR_I(3), rf24 );
 
 ControllablePump* pumps[NPUMPS] = {&mainCirc,  &skimmer, &ph1, &ph2 };
 
-TempController tempController( HEAT_ON, SUMP_TEMP, DISPLAY_TEMP, T_CTRL_EE_ADDR );
+TempController tempController( HEAT_ON, TEMP_DATA, TEMP_RES, T_CTRL_EE_ADDR );
 
 pHProbe pH_probe( Serial3, tempController );
 ConductivityProbe EC_probe( Serial2, tempController );
@@ -151,12 +150,14 @@ static void getStatus( Command* cmd )
     json["sump_lev"] = distanceSensor.currentCM();
     json["heat"] = tempController.heaterIsOn();
     json["theat"] = tempController.timeSinceLastOnOff(); // Dividing by 1000 fails.  Blows stack?
-    float t = tempController.curTemp(0);
+    float t = tempController.curTemp(0,false);
     json["temp0"] = isnan(t) ? 0.0 : t;
-    t = tempController.curTemp(1);
+    t = tempController.curTemp(1,false);
     json["temp1"] = isnan(t) ? 0.0 : t;
-    json["cal0"] = tempController.isCalibrated(0);
-    json["cal1"] = tempController.isCalibrated(1);
+    t = tempController.curTemp(0,true);
+    json["raw0"] = isnan(t) ? 0.0 : t;
+    t = tempController.curTemp(1,true);
+    json["raw1"] = isnan(t) ? 0.0 : t;
     json["tset"] = tempController.getSetTemp();
     json["tper"] = tempController.getSamplePeriod();
     json["tsens"] = tempController.getSensitivity();
@@ -173,15 +174,15 @@ static void getStatus( Command* cmd )
      "sump_lev": 123,
      "heat": true,
      "theat": 1000,
-     "temp0": 1.23,
-     "temp1": 1.23,
-     "cal0": true,
-     "cal1": true,
+     "temp0": 80.23,
+     "temp1": 80.23,
+     "raw0": 1.23,
+     "raw1": 1.34,
      "tset": 1.23,
      "tper": 10000,
      "tsens": 1.23
    }
-    328
+    330
    */
 }
 
@@ -381,11 +382,9 @@ void processCommand()
                 break;
             }
             case CmdCalTemp: {
-                int step = -1;
                 float TF;
-                cmd->arg(0)->getInt(step);
-                cmd->arg(1)->getFloat(TF);
-                cmd->ack( tempController.calStep( step, cmd->ID(), TF ) );
+                cmd->arg(0)->getFloat(TF);
+                cmd->ack( tempController.calUsingTemp( TF ) );
                 respDone = true;
                 break;
             }

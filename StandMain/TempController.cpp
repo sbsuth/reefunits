@@ -5,30 +5,27 @@
 #include "Command.h"
 
 
-TempController::TempController(   int ctrlPin, int temp1Pin, int temp2Pin, unsigned confAddr )
+TempController::TempController(   int ctrlPin, int tempPin, int tempRes, unsigned confAddr )
         : m_ctrlPin(ctrlPin), m_confAddr(confAddr)
+        , m_samplePeriod(1000)
+        , m_tempSensors(tempPin,tempRes,m_samplePeriod)
         , m_setTemp(0), m_heatOn(false), m_lastOnOff(millis()),
         m_lastSampleTime(0), m_lastSampledProbe(0)
 {
-    m_cal[0].setTC(this);
-    m_cal[1].setTC(this);
-    m_tempPin[1] = temp2Pin;
-    m_tempPin[0] = temp1Pin;
-    m_tempPin[1] = temp2Pin;
+    m_tempPin = tempPin;
 
     // Defaults for EEPROM values.  Should be overwritten except for first clean exec.
     m_setTemp = 79;
-    m_samplePeriod = 500;
     m_sensitivity = 0.25;
-    m_VCC = 4.88;
+    m_VCC = 4.88; // Unusued
     
-    // Taken from an initial calibration.  But they don't seem right, so update on next cal.
-    m_A[0] =  0.0023715203;
-    m_B[0] =  0.0000152698;
-    m_C[0] =  0.0000010045;
-    m_A[1] =  0.0002206226;
-    m_B[1] =  0.0003594418;
-    m_C[1] = -0.0000002995;
+    // taken from good calibratrion.
+    m_A[0] =  0.0;
+    m_B[0] =  0.0; // Unusued
+    m_C[0] =  0.0; // Unusued
+    m_A[1] =  0.0;
+    m_B[1] =  0.0; // Unusued
+    m_C[1] =  0.0; // Unusued
 }
 
 void TempController::setup( bool useSettings )
@@ -44,8 +41,7 @@ void TempController::setup( bool useSettings )
     pinMode( m_ctrlPin, OUTPUT );
     digitalWrite( m_ctrlPin, 0 );
 
-    pinMode( m_tempPin[0], INPUT );
-    pinMode( m_tempPin[1], INPUT );
+    m_tempSensors.setup();
 
     // The analog reference is global, so this is only valid if there are no other units doing analogRead().
     analogReference( INTERNAL2V56 );
@@ -57,32 +53,19 @@ static double scaleFloat( float v ) {
 
 bool TempController::update()
 {
-    // Sample temp on one sensor every m_samplePeriod ms.
-    unsigned long curTime = millis();
-    if ((curTime - m_lastSampleTime) > m_samplePeriod) {
-        m_lastSampledProbe = (m_lastSampledProbe ? 0 : 1);
-        m_lastSampleTime = curTime;
-        if (isCalibrated(m_lastSampledProbe)) {
-            unsigned adc = analogRead( pinFor(m_lastSampledProbe) );
-            float R = adc2R(adc);
-            float TF = calcTemp( R, m_lastSampledProbe );
-            // We can get some seriously wacky values.
-            // Reject those that are 2 degrees away from the average if full.
-            #if DEBUG_TEMP
-            Serial.print("TEMP: ");Serial.print(m_lastSampledProbe);Serial.print(": adc=");Serial.print(adc);
-            Serial.print(", R=");Serial.print(R);
-            Serial.print(", TF=");Serial.print(TF);
-            Serial.println("");
-            #endif
-            Avg<32,float>& tv = m_tempValue[m_lastSampledProbe];
-            float diff = tv.avg() - TF;
-            if (!tv.isFull() || ((diff < 2.0) && (diff > -2.0))) {
-                tv.update(TF);
+    if (m_tempSensors.update()) {
+        for ( int i=0; (i < 2) && (i < m_tempSensors.getNumDevices()); i++ ) {
+            // Read temp F and store.  Reject any obviously bad.
+            float TF = m_tempSensors.getTemp(i);
+            if ( isGoodTemp(TF) ) {
+                m_tempValue[i] = TF;
+            } else {
+                m_tempValue[i] = 0.0;
             }
 
-            // Set heater on/off based on current temps.
-            calcOnOff();
         }
+        // Set heater on/off based on current temps.
+        calcOnOff();
     }
     
     // Push heat on.
@@ -98,7 +81,7 @@ unsigned long TempController::timeSinceLastOnOff() {
 
 bool TempController::isCalibrated( int itherm ) {
     if ((itherm >= 0) && (itherm < 2)) {
-        return m_A[itherm] != 0.0 && m_B[itherm] != 0.0 && m_C[itherm] != 0.0;
+        return m_A[itherm];
     } else {
         return isCalibrated(0) && isCalibrated(1);
     }
@@ -124,10 +107,10 @@ unsigned TempController::ee_size() {
     return sizeof(m_setTemp)
         + sizeof(m_samplePeriod)
         + sizeof(m_sensitivity)
-        + sizeof(m_VCC)
+        + sizeof(m_VCC) // unusued
         + sizeof(m_A)
-        + sizeof(m_B)
-        + sizeof(m_C);
+        + sizeof(m_B) // unusued
+        + sizeof(m_C); // unusued
 }
 void TempController::restoreSettings() {
     unsigned addr = m_confAddr;
@@ -137,11 +120,12 @@ void TempController::restoreSettings() {
 
     EEPROM.get( addr, m_samplePeriod );
     addr += sizeof(m_samplePeriod);
+    m_tempSensors.setPeriodMs(m_samplePeriod);
 
     EEPROM.get( addr, m_sensitivity );
     addr += sizeof(m_sensitivity);
 
-    EEPROM.get( addr, m_VCC );
+    EEPROM.get( addr, m_VCC ); // unusued
     addr += sizeof(m_VCC);
 
     EEPROM.get( addr, m_A[0] );
@@ -150,25 +134,25 @@ void TempController::restoreSettings() {
     EEPROM.get( addr, m_A[1] );
     addr += sizeof(m_A[1]);
 
-    EEPROM.get( addr, m_B[0] );
+    EEPROM.get( addr, m_B[0] ); // unused
     addr += sizeof(m_B[0]);
 
-    EEPROM.get( addr, m_B[1] );
+    EEPROM.get( addr, m_B[1] ); // unused
     addr += sizeof(m_B[1]);
 
-    EEPROM.get( addr, m_C[0] );
+    EEPROM.get( addr, m_C[0] ); // unused
     addr += sizeof(m_C[0]);
 
-    EEPROM.get( addr, m_C[1] );
+    EEPROM.get( addr, m_C[1] ); // unused
     addr += sizeof(m_C[1]);
 
    #if DEBUG_TEMP
    Serial.print("TEMP: A[0]=");Serial.println(String(scaleFloat(m_A[0]),7));
-   Serial.print("TEMP: B[0]=");Serial.println(String(scaleFloat(m_B[0]),7));
-   Serial.print("TEMP: C[0]=");Serial.println(String(scaleFloat(m_C[0]),7));
    Serial.print("TEMP: A[1]=");Serial.println(String(scaleFloat(m_A[1]),7));
-   Serial.print("TEMP: B[1]=");Serial.println(String(scaleFloat(m_B[1]),7));
-   Serial.print("TEMP: C[1]=");Serial.println(String(scaleFloat(m_C[1]),7));
+   //Serial.print("TEMP: B[0]=");Serial.println(String(scaleFloat(m_B[0]),7));
+   //Serial.print("TEMP: B[1]=");Serial.println(String(scaleFloat(m_B[1]),7));
+   //Serial.print("TEMP: C[0]=");Serial.println(String(scaleFloat(m_C[0]),7));
+   //Serial.print("TEMP: C[1]=");Serial.println(String(scaleFloat(m_C[1]),7));
    #endif
 }
 
@@ -184,7 +168,7 @@ void TempController::saveSettings() {
     EEPROM.put( addr, m_sensitivity );
     addr += sizeof(m_sensitivity);
 
-    EEPROM.put( addr, m_VCC );
+    EEPROM.put( addr, m_VCC ); // unused
     addr += sizeof(m_VCC);
 
     EEPROM.put( addr, m_A[0] );
@@ -193,147 +177,83 @@ void TempController::saveSettings() {
     EEPROM.put( addr, m_A[1] );
     addr += sizeof(m_A[1]);
 
-    EEPROM.put( addr, m_B[0] );
+    EEPROM.put( addr, m_B[0] ); // unused
     addr += sizeof(m_B[0]);
 
-    EEPROM.put( addr, m_B[1] );
+    EEPROM.put( addr, m_B[1] ); // unused
     addr += sizeof(m_B[1]);
 
-    EEPROM.put( addr, m_C[0] );
+    EEPROM.put( addr, m_C[0] ); // unused
     addr += sizeof(m_C[0]);
 
-    EEPROM.put( addr, m_C[1] );
+    EEPROM.put( addr, m_C[1] ); // unused
     addr += sizeof(m_C[1]);
 }
 
-// Convert an ADC reading to a thermistor resistance based
-// a fixed 5.1k pulldown resistor value, a fixed 2.2V reference,
-// and a VCC that can be calibrated.
-// 
-//  VCC --- R_therm --- ADC --- R_pulldown --- GND
-//  
-float TempController::adc2R( unsigned adc ) {
-    float V = (adc * VREF)/1024;
-    return (R_pulldown * (m_VCC - V))/V; // ZERO DENOM!
-}
-
-// Adds a calibration point given a step and an externally measure temp.
-// Measures the current ADC reading to go with it.
-// If step is 0, resets.
-// Otherwise, if step is not the next expected step, returns false.
-// If step is 2, sets the calibration.
-bool TempController::calStep( unsigned step, unsigned itherm, float TF )
-{
-    if (step == 0) {
-        m_cal[itherm].reset();
-    } else if (step != m_cal[itherm].nextStep()) {
-        return false;
-    }
-    unsigned adc = analogRead( pinFor(itherm) );
-    if (m_cal[itherm].addPoint( adc, TF ))
-        return setCal( m_cal[itherm], itherm );
-    else
-        return true;
-}
-
-// Given thermistor 3 resistance values, 3 temperatures measured externally at
-// the same time, solves the Steiner-Hart equation to for its 3 constants.
-// Returns true if a solution was possible.
-bool TempController::setCal(    const CalSession& data, unsigned itherm )
-{
-     bool success = false; 
-     float& A = m_A[itherm];
-     float& B = m_B[itherm];
-     float& C = m_C[itherm];
-     const float& R0 = data.m_R[0];
-     const float& R1 = data.m_R[1];
-     const float& R2 = data.m_R[2];
-     
-     float T0 = f2k(data.m_TF[0]);
-     float T1 = f2k(data.m_TF[1]);
-     float T2 = f2k(data.m_TF[2]);
-     if (R0>5 && R1>5 && R2>5 && R0!=R1 && R1!=R2 && R0!=R2 && T0!=T1) {
-        float lR0 = log(R0);
-        float lR1 = log(R1);
-        float lR2 = log(R2);
-        float iT0 = 1/T0; // ZERO DENOM!
-        float iT1 = 1/T1; // ZERO DENOM!
-        float iT2 = 1/T2; // ZERO DENOM!
-        float lR0_3 = pow(lR0,3);
-        float lR1_3 = pow(lR1,3);
-        float lR2_3 = pow(lR2,3);
-        C =   ((iT0-iT1)     - (((lR0-lR1) * (iT0-iT2))/(lR0-lR2)))  // ZERO DENOM!
-            / ((lR0_3-lR1_3) - (((lR0-lR1) * (lR0_3-lR2_3))/(lR0-lR2))); // ZERO DENOM!
-        B = ((iT0-iT1) - (C * (lR0_3-lR1_3))) / (lR0-lR1); // ZERO DENOM!
-        A = iT0 - C*lR0_3 - B*lR0;
-
-        #if DEBUG_TEMP
-        Serial.print("TEMP: Finish cal for probe ");Serial.print(itherm);Serial.print(", A=");Serial.print(A);Serial.print(",B=");Serial.print(B);Serial.print(", C=");Serial.println(C);
-        #endif
-
-        saveSettings();
-
-        return true;
+float TempController::curTemp( int itherm, bool raw ) {
+    if ((itherm >= 0) && (itherm < 2)) {
+        if (itherm < m_tempSensors.getNumDevices()) {
+            return m_tempValue[itherm] + ((raw ? 0.0 : getOffset(itherm)));
+        } else {
+            return 0.0;
+        }
+    } else if (m_tempSensors.getNumDevices() >= 2) {
+        float tf0 = curTemp(0,raw);
+        float tf1 = curTemp(1,raw);
+        if (isGoodTemp(tf0) && isGoodTemp(tf1)) {
+            return (tf0 + tf1)/2.0;
+        } else if (isGoodTemp(tf0)) {
+            return tf0;
+        } else {
+            return tf1;
+        }
+    } else if (m_tempSensors.getNumDevices() == 1) {
+        return curTemp(0,raw);
     } else {
-        A = 0;
-        B = 0;
-        C = 0;
-        #if DEBUG_TEMP
-        Serial.print("TEMP: Finish cal for probe: failed: bad input");
-        #endif
-        return false;
+        return 0.0;
     }
 }
 
-// Given a thermistor resistance value, and a thermistor index
-// to specify cal constants, uses the Steiner-Hart equation to
-// calculate a temperature in Farenheit.
-float TempController::calcTemp( float R, unsigned itherm )
+float TempController::getOffset( int devIndex )
 {
-     float lR = log(R);
-     float T = m_A[itherm] + m_B[itherm] * lR + m_C[itherm] * pow(lR,3);
-     T = 1.0/T; // ZERO DENOM!
-     return k2f(T);
+    int addrIndex = m_tempSensors.getAddrIndexForDevIndex(devIndex);
+    for ( int i=0; i < 2; i++ ) {
+        if ( int(m_B[i]) == addrIndex )
+            return m_A[i];
+    }
+    return 0.0;
+}
+
+// Uses the current "correct" temp to set the offset for each current sensor.
+// Stores in EEPROM.
+bool TempController::calUsingTemp( float TF )
+{
+    int nDev = m_tempSensors.getNumDevices();
+    for ( int devIndex=0; devIndex < nDev; devIndex++ ) {
+        int addrIndex = m_tempSensors.getAddrIndexForDevIndex(devIndex);
+        float rawTemp = curTemp(devIndex,true);
+        float offset = TF - rawTemp;
+        m_A[devIndex] = offset;
+        m_B[devIndex] = addrIndex; // Tag with addrIndex so not dependent on order.
+    }
+    saveSettings();
+    return (nDev > 0);
 }
 
 void TempController::ackCalConsts( Command* cmd )
 {
-    StaticJsonBuffer<160> jsonBuffer;
+    StaticJsonBuffer<64> jsonBuffer;
 
     JsonObject& json = jsonBuffer.createObject();
     json["A0"] = String(scaleFloat(m_A[0]),7);
-    json["B0"] = String(scaleFloat(m_B[0]),7);
-    json["C0"] = String(scaleFloat(m_C[0]),7);
     json["A1"] = String(scaleFloat(m_A[1]),7);
-    json["B1"] = String(scaleFloat(m_B[1]),7);
-    json["C1"] = String(scaleFloat(m_C[1]),7);
     cmd->ack( json );
    /*
     https://bblanchon.github.io/ArduinoJson/assistant/
    {
      "A0": "0.0001234",
-     "B0": "0.0001234",
-     "C0": "0.0001234",
-     "A1": "0.0001234",
-     "B1": "0.0001234",
-     "C1": "0.0001234",
+     "A1": "0.0001234"
    }
-    142
+    50
    */
-}
-float TempController::curTemp( int itherm ) {
-    if ((itherm >= 0) && (itherm < 2)) {
-        if (isCalibrated(itherm))
-            return m_tempValue[itherm].avg();
-        else
-            return 0.0;
-    } else if (isCalibrated()) {
-        return (m_tempValue[0].avg() + m_tempValue[1].avg())/2.0;
-    } else if (isCalibrated(0)) {
-        return curTemp(0);
-    } else if (isCalibrated(1)) {
-        return curTemp(0);
-    } else {
-        return 0.0;
-    }
 }
