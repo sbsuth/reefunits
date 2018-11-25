@@ -1,6 +1,12 @@
 #include "DS18B20.h"
 
-#define DEBUG_TEMP 1
+//#define DEBUG_TEMP 1
+
+// Interval between retries for missing sensors
+#define DEVICE_SEARCH_INTERVAL_MS (5 * 1000)
+
+// After this many bad measurements in a row, consider the sensor dead.
+#define MAX_BAD_MEASUREMENTS 16
 
 // The order of this array defines the addrIndexes used as handles
 // for devices, so once an address has occupied an index, it should never move
@@ -14,40 +20,68 @@ static dsaddr_t g_devices[NUM_DEVICES] = {
 
 template <int N>
 bool DS18B20<N>::update() {
+    bool changed = false;
+    if (!m_initDone) {
+        if (millis() < 5000)
+            return false;
+        m_sensors.begin();
+        m_sensors.setWaitForConversion(false); 
+        m_initDone = true;
+    }
+    bool goneBad = false;
     unsigned long now = millis();
-    if (now >= m_nextTime) {
-        if (m_waitingInit) {
-            m_sensors.begin();
-            findSensors();
+    if (now >= m_nextMeasTime) {
+        if ((m_nextSearchTime > 0) && (now > m_nextSearchTime)) {
             #if DEBUG_TEMP
-              Serial.print("Locating devices...");
-              Serial.print("Found ");
-              Serial.print(m_numDevices, DEC);
-              Serial.println(" devices.");
-              Serial.print((int)sizeof(float));Serial.println(" bytes for float");
-              Serial.print((int)sizeof(int));Serial.println(" bytes for int");
+            Serial.print(F("Do search for devices since there are only "));Serial.println(m_numDevices);
             #endif
-
-            m_sensors.setWaitForConversion(false);
-            m_waitingInit = false;
+            findSensors();
+            m_nextSearchTime = 0;
         } else if (m_waitingTemp) {
             // Read results and go idle for reset of second.
-            m_nextTime = now + (m_period_ms - curDelay());
+            m_nextMeasTime = now + (m_period_ms - curDelay());
             for (int i=0; (i < m_numDevices) && (i < N); i++ ) {
                 float newTemp = m_sensors.getTempF( g_devices[m_devMap[i]] );
-                newTemp += m_offset[i];
-                m_temp[i].update(newTemp);
+                // Bad readings are something like -196, so reject negative numbers.
+                #if DEBUG_TEMP
+                Serial.print(F("New #"));Serial.print(i);Serial.print("=");Serial.println(newTemp);
+                #endif
+                if (newTemp > 0.0) {
+                    m_temp[i].update(newTemp);
+                    m_numBad[i] = 0;
+                } else {
+                    m_numBad[i]++;
+                }
+                if (m_numBad[i] > MAX_BAD_MEASUREMENTS) {
+                    // Count it as dead.
+                    m_temp[i].reset();
+                    goneBad = true;
+                    m_numBad[i] = 0;
+                    #if DEBUG_TEMP
+                    Serial.print(F("Device #"));Serial.print(i);Serial.println(F(" is dead"));
+                    #endif
+                }
             }
             m_waitingTemp = false;
-            return true;
+            changed  = true;
         } else {
             // Init reading, and come back after delay.
-            m_sensors.requestTemperatures();
-            m_nextTime = now + curDelay();
-            m_waitingTemp = true;
+            if (m_numDevices > 0) {
+                m_sensors.requestTemperatures();
+                m_waitingTemp = true;
+            }
+            m_nextMeasTime = now + curDelay();
         }
     }
-    return false;
+    if ((m_numDevices < N) || goneBad){
+        if (!m_nextSearchTime) {
+            #if DEBUG_TEMP
+            Serial.print(F("Only "));Serial.print(m_numDevices);Serial.print(F(" devices.  Will start search in "));Serial.println(DEVICE_SEARCH_INTERVAL_MS);
+            #endif
+            m_nextSearchTime = now + DEVICE_SEARCH_INTERVAL_MS;
+        }
+    }
+    return changed;
 }
 
 // Return the index for the given address, or -1.
@@ -82,24 +116,31 @@ void DS18B20<N>::findSensors() {
         m_devMap[i] = -1;
     }
     int devIndex = 0;
+    m_oneWire.reset_search();
     while (m_oneWire.search(addr)) {
         int addrIndex = addr2index(addr);
         if (addrIndex >= 0) {
             m_devMap[devIndex] = addrIndex;
-            devIndex++;
-            #if DEBUG_TEMP
-            Serial.print("Recognized device @index=");Serial.print(devIndex);
-            Serial.print(", addrIndex=");Serial.println(addrIndex);
+            #if DEBUG_TEMP 
+            Serial.print(("Recognized device @index="));Serial.print(devIndex);
+            Serial.print(F(", addrIndex="));Serial.println(addrIndex);
             printAddress(addr);
             #endif
+            devIndex++;
         } else {
             #if DEBUG_TEMP
-            Serial.println("ERROR: Unrecognized address:");
+            Serial.println(F("ERROR: Unrecognized address:"));
             printAddress(addr);
             #endif
         }
     }
     m_numDevices = devIndex;
+    #if DEBUG_TEMP
+    Serial.print(F("Locating devices..."));
+    Serial.print(F("Found "));
+    Serial.print(m_numDevices, DEC);
+    Serial.println(F(" devices."));
+    #endif
 }
     
 
