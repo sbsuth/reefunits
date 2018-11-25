@@ -7,8 +7,13 @@ class Avg {
     Avg( T center=0 ) 
        : m_avg(center), m_nVals(0)
     {
+        reset(center);
+    }
+    void reset( T center=0 ) {
+       m_nVals = 0;
        for ( int i=0; i < N; i++ )
          m_vals[i] = center;
+        m_avg = center;
     }
 
     bool isFull() {
