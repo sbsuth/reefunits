@@ -108,6 +108,10 @@ ifeq ($(USE_TIME),1)
 THIRDPARTYLIB_ENABLED +=  Time-master
 endif
 
+ifeq ($(USE_DALLAS),1)
+THIRDPARTYLIB_ENABLED +=  OneWire-master DallasTemperature-3.8.0
+endif
+
 
 
 F_CPU := 16000000L
@@ -152,6 +156,9 @@ endif
 ifndef UTILS_SOURCE
 ifeq ($(USE_PING),1)
 UTILS_SOURCE:=../utils/DistanceSensor.cpp
+endif
+ifeq ($(USE_DALLAS),1)
+UTILS_SOURCE+=../utils/DS18B20.cpp
 endif
 endif
 
