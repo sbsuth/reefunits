@@ -498,7 +498,8 @@ void Leds::update()
     if ((((m_lastUpdate + RECALC_TIMED_MS) < millis()) || m_cycleInvalid) && m_timeIsSet) {
         updateAll();
         m_lastUpdate = millis();
-        pushVals();
+        if (m_mode != External) 
+            pushVals();
     }
 }
 
