@@ -82,10 +82,10 @@ class ControllablePump
     unsigned char getHoldSec() {
         return m_holdSec;
     }
-    unsigned int getRampRangeMs() {
+    unsigned long getRampRangeMs() {
         return m_rampRangeMs;
     }
-    unsigned int getHoldRangeMs() {
+    unsigned long getHoldRangeMs() {
         return m_holdRangeMs;
     }
     unsigned char getRampRangePct() {
@@ -94,7 +94,7 @@ class ControllablePump
     unsigned char getHoldRangePct() {
         return getRangePct(m_holdRangeMs,m_holdSec);
     }
-    static unsigned char getRangePct( unsigned int range_ms, unsigned char hold_sec ) {
+    static unsigned char getRangePct( unsigned long range_ms, unsigned char hold_sec ) {
         // range is in ms, hold is in sec, we want the ration as a percent.
         return (range_ms * 1.0)/(hold_sec * 10.0); // ZERO DENOM!
     }
@@ -135,7 +135,7 @@ class ControllablePump
         sec = int(rampArg);
         pct = (rampArg - sec);
         m_rampSec = sec;
-        m_rampRangeMs = int((pct * (float)sec) * 1000.0); // ms
+        m_rampRangeMs = long((pct * (float)sec) * 1000.0); // ms
 
         m_upDown = 0;
         m_lastChangeTime = 0;
@@ -153,7 +153,7 @@ class ControllablePump
 
     void update() {
 
-        unsigned char newSpeed = m_curSpeed;
+        unsigned newSpeed = m_curSpeed;
 
         // Calculate a new speed in modes that do that.
         unsigned char minSpeed = (m_minPct ? (((m_minPct+1)*255)/100) : 1); // Never actually switch off.
@@ -162,8 +162,8 @@ class ControllablePump
         if (minSpeed > m_topSpeed)
             minSpeed = m_topSpeed;
         unsigned long curTime = millis();
-        unsigned holdMsec = m_holdSec*1000;
-        unsigned rampMsec = m_rampSec*1000;
+        unsigned long holdMsec = m_holdSec*1000UL;
+        unsigned long rampMsec = m_rampSec*1000UL;
         bool updateOffset = false;
         bool updateSwitch = false;
         unsigned long elapsedTime = (curTime - m_lastChangeTime);
@@ -205,17 +205,18 @@ class ControllablePump
                             updateSwitch = true;
                             debugPrintPumpState();
                         }
-                    } else if (elapsedTime > 250) { // Avoid unnecessary calculation.
+                    //} else if (elapsedTime > 250) { // Avoid unnecessary calculation.
+                    } else if (elapsedTime > 1024) { // Avoid unnecessary calculation.
 
-                        unsigned long speedChange = ((unsigned long)speedRange * elapsedTime)
-                                                      / (rampMsec + m_rampOffset); // ZERO DENOM!
+                        unsigned speedChange = ((unsigned long)speedRange * elapsedTime)
+                                                 / (rampMsec + m_rampOffset); // ZERO DENOM!
                         if (speedChange) {
                             if (m_upDown > 0) {
-                                newSpeed = m_curSpeed + speedChange;
+                                newSpeed = (unsigned)m_curSpeed + speedChange;
                                 if (newSpeed > m_topSpeed)
                                     newSpeed = m_topSpeed;
                             } else {
-                                newSpeed = m_curSpeed - speedChange;
+                                newSpeed = (unsigned)m_curSpeed - speedChange;
                                 if (newSpeed < minSpeed)
                                     newSpeed = minSpeed;
                             }
@@ -226,15 +227,16 @@ class ControllablePump
                     break;
                 }
                 case SinWave: {
-                    if (elapsedTime < 250) // Avoid unnecessary calculation.
+                    if (elapsedTime < 1024) // Avoid unnecessary calculation.
                         break; 
 
                     float speedRange = (m_topSpeed - minSpeed);
                     unsigned long period = (2 * (rampMsec + m_rampOffset));
-                    unsigned long tOffset = curTime % period;
+                    //unsigned long tOffset = curTime % period;
+                    unsigned long tOffset = (curTime - m_cycleStart);
                     float radians = ((float)tOffset / (float)period) * 6.283;
                     float speed = ((sin(radians) + 1.0) * (speedRange/2.0)) + (float)minSpeed;
-                    unsigned newSpeed = (int)(speed + 0.5);
+                    newSpeed = (int)(speed + 0.5);
 
                     if (newSpeed > m_topSpeed) {
                         newSpeed = m_topSpeed;
@@ -242,16 +244,20 @@ class ControllablePump
                         newSpeed = minSpeed;
                     }
                     if (newSpeed != m_curSpeed) {
-                        m_lastChangeTime = curTime;
                         if ((newSpeed < m_curSpeed) && (m_upDown > 0)) {
                             m_upDown = -1;
-                            updateOffset = true;
+                            //updateOffset = true;
                             updateSwitch = true;
                         } else if ((newSpeed > m_curSpeed) && (m_upDown <= 0)) {
                             m_upDown = 1;
-                            updateOffset = true;
+                            //updateOffset = true;
                             updateSwitch = true;
                         }
+                    }
+                    m_lastChangeTime = curTime;
+                    if (tOffset > period) {
+                        m_cycleStart = curTime;
+                        updateOffset = true;
                     }
                     break;
                 }
@@ -288,8 +294,8 @@ class ControllablePump
 
         // If changing, update random offsets if set.
         if (updateOffset) {
-            m_rampOffset = calcRandom( rampMsec, m_rampRangeMs );
-            m_holdOffset = calcRandom( holdMsec, m_holdRangeMs );
+            m_rampOffset = calcRandom( m_rampRangeMs );
+            m_holdOffset = calcRandom( m_holdRangeMs );
         }
 
         syncSwitch( newSpeed, updateSwitch);
@@ -309,14 +315,14 @@ class ControllablePump
 
     void debugPrintPumpState() {
         #if DEBUG_PUMP
-        Serial.print("PUMP: ");Serial.print(m_swAddr);
-        Serial.print(": change at:");Serial.print(millis());
-        Serial.print(", m_lastChangeTime=");Serial.print(m_lastChangeTime);
-        Serial.print(", m_holdSec=");Serial.print((int)m_holdSec);
-        Serial.print(", m_holdOffset=");Serial.print((int)m_holdOffset);
-        Serial.print(", m_rampSec=");Serial.print((int)m_rampSec);
-        Serial.print(", m_rampOffset=");Serial.print((int)m_rampOffset);
-        Serial.print(", inShutdown=");Serial.print(m_tempShutoffUntil);
+        Serial.print(F("PUMP: "));Serial.print(m_swAddr);
+        Serial.print(F(": change at:"));Serial.print(millis());
+        Serial.print(F(", m_lastChangeTime="));Serial.print(m_lastChangeTime);
+        Serial.print(F(", m_holdSec="));Serial.print((int)m_holdSec);
+        Serial.print(F(", m_holdOffset="));Serial.print((int)m_holdOffset);
+        Serial.print(F(", m_rampSec="));Serial.print((int)m_rampSec);
+        Serial.print(F(", m_rampOffset="));Serial.print((int)m_rampOffset);
+        Serial.print(F(", inShutdown="));Serial.print(m_tempShutoffUntil);
         Serial.println("");
         #endif
     }
@@ -364,7 +370,7 @@ class ControllablePump
         }
     }
                     
-     static int calcRandom( unsigned int sec, unsigned int range ) {
+     static long calcRandom( unsigned long range ) {
         if (range == 0)
             return 0;
 
@@ -372,7 +378,7 @@ class ControllablePump
          // Scale by multiplying to 32-bits, and scaling back down.
          m_rand = (100057  * m_rand + 1237);
          float pct = (float)m_rand/(float)0xefff;
-         int rslt = int( pct * range );
+         long rslt = int( pct * range );
          return rslt;
      }
 
@@ -454,12 +460,13 @@ class ControllablePump
     Mode          m_mode;
     unsigned char m_rampSec;
     unsigned char m_holdSec;
-    unsigned int  m_rampRangeMs;
-    unsigned int  m_holdRangeMs;
-    int           m_rampOffset;
-    int           m_holdOffset;
+    unsigned long m_rampRangeMs;
+    unsigned long m_holdRangeMs;
+    long           m_rampOffset;
+    long           m_holdOffset;
     unsigned long m_lastChangeTime;
     unsigned long m_lastWriteTime;
+    unsigned long m_cycleStart;
     unsigned long m_tempShutoffUntil;
     ShutdownKind  m_tempShutoffMode;
     char          m_upDown;
