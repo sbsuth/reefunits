@@ -6,8 +6,8 @@
 #else
 
 X(  CmdPing,        "ping", false,  CmdArgNone )
-X(  CmdSetRes,      "res",  false,  CmdArgInt )
-X(  CmdGetTemp,     "get",  false,  CmdArgInt )
+X(  CmdPumpOn,      "pon",  true,   CmdArgInt )
+X(  CmdPumpSpeed,   "pspd", true,   CmdArgInt )
 X(  CmdNone,        "nop",  false,  CmdArgNone )
 
 #endif
