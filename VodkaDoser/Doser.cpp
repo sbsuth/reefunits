@@ -6,14 +6,25 @@
 #define DEBUG_CHANGES 1
 #define DEBUG_CMD 1
 
+#define RF24_RE_INIT_AFTER_NUM_EMPTY 2
 
 #include <Arduino.h>
+#include <EEPROM.h>
+#include <ArduinoJson.h>
+#include "RF24Interface.h"
 
 #include "Command.h"
+
+#define RF24_CE          6
+#define RF24_CSN         7
 
 #define SPEED_PIN_0 9
 #define SPEED_PIN_1 10
 #define NUM_PUMPS 2
+
+// Network.
+RF24IPInterface rf24( 8, RF24_CE, RF24_CSN );
+DEFINE_RF24IPInterface_STATICS(rf24);
 
 class Pump {
   public:
@@ -29,11 +40,9 @@ class Pump {
         else if (pct < 0)
             pct = 0;
         m_speed = 255 - (((unsigned long)pct * 255)/100);
-Serial.print("Set m_speed to ");Serial.println(m_speed);
     }
     void setOn( bool onOff ) {
         m_on = onOff;
-Serial.print("Set onOff to ");Serial.println(m_on);
     }
     void update() {
         unsigned value = m_on ? m_speed : 255;
@@ -87,8 +96,10 @@ void setup() {
 
     setupTimers();
 
+    rf24.init();
+
     for ( int i=0; i < NUM_PUMPS; i++ ) {
-        pumps[i]->update();
+        pumps[i]->setup();
     }
 
     #if DEBUG_STARTUP
@@ -100,6 +111,10 @@ static ArduinoSerialIO sis;
 static CommandParser serialParser( g_commandDescrs, &sis );
 static Command serialCmd;
 
+static EthernetSerialIO rfs( &rf24 );
+static CommandParser rf24Parser( g_commandDescrs, &rfs );
+static Command rf24Cmd;
+
 void processCommand()
 {
 
@@ -108,7 +123,11 @@ void processCommand()
     int i;
     bool error = false;
     Command* cmd = 0;
-    if ( (cmd=serialParser.getCommand( &serialCmd, error )) ) {
+    cmd=serialParser.getCommand( &serialCmd, error );
+    if (!cmd)
+      cmd = rf24Parser.getCommand( &rf24Cmd, error );
+    
+    if (cmd) {
         bool needResp = true;
         #if DEBUG_CMD
         Serial.print(F("Command: "));
@@ -163,6 +182,9 @@ void processCommand()
 
 // the loop function runs over and over again forever
 void loop() {
+
+  rf24.update();
+
   processCommand();
 
   for ( int i=0; i < NUM_PUMPS; i++ ) {
