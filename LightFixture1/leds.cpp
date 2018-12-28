@@ -379,9 +379,12 @@ void Leds::updateCycle( bool force )
         // If outide of both ranges, don't worry about scaling.
         unsigned long nowSec = now();
 
-        // If before use sunrise, adjustment is just offset.
+        // If before use sunrise, adjustment is just offset, but guard against going back to yesterday.
         if (nowSec < m_useCycle.sunriseSec) {
-            return -m_offsetSec;
+            if (m_offsetSec > (nowSec - m_dayStart))
+                return (long)m_dayStart - (long)nowSec;
+            else
+                return -m_offsetSec;
         }
 
         unsigned long useRange = (m_useCycle.sunsetSec - m_useCycle.sunriseSec);
