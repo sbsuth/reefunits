@@ -8,6 +8,9 @@
 X(  CmdPing,        "ping", false,  CmdArgNone )
 X(  CmdPumpOn,      "pon",  true,   CmdArgInt )
 X(  CmdPumpSpeed,   "pspd", true,   CmdArgInt )
+X(  CmdDispense,    "disp",  true,   CmdArgInt )
+X(  CmdCal,         "calb",  true,   CmdArgNone )
+X(  CmdCalRslt,     "calr",  true,   CmdArgInt )
 X(  CmdNone,        "nop",  false,  CmdArgNone )
 
 #endif
