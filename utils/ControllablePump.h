@@ -199,18 +199,18 @@ class ControllablePump
                     unsigned long speedRange = (m_topSpeed - minSpeed);
                     if (m_upDown == 0) {
                         if (elapsedTime > (holdMsec + m_holdOffset)) {
-                            m_upDown = (m_curSpeed > (speedRange/2)) ? -1 : 1;
+                            m_upDown = (m_curSpeed > (minSpeed + (speedRange/2))) ? -1 : 1;
                             m_lastChangeTime = curTime;
                             updateOffset = true;
                             updateSwitch = true;
                             debugPrintPumpState();
                         }
-                    //} else if (elapsedTime > 250) { // Avoid unnecessary calculation.
                     } else if (elapsedTime > 1024) { // Avoid unnecessary calculation.
 
-                        unsigned speedChange = ((unsigned long)speedRange * elapsedTime)
-                                                 / (rampMsec + m_rampOffset); // ZERO DENOM!
+                        unsigned long speedChange = ((unsigned long)speedRange * elapsedTime * 16UL)
+                                                     / (rampMsec + m_rampOffset); // ZERO DENOM!
                         if (speedChange) {
+                            speedChange /= 16UL; // Denom was promoted to avoid 0 values above.
                             if (m_upDown > 0) {
                                 newSpeed = (unsigned)m_curSpeed + speedChange;
                                 if (newSpeed > m_topSpeed)
