@@ -24,7 +24,7 @@
 #define SPEED_PIN_1 10
 #define NUM_PUMPS 2
 
-#define EE_SIG 124
+#define EE_SIG 125
 #define SIG_EE_ADDR         0
 #define SIG_EE_SIZE         sizeof(unsigned char)
 
@@ -32,6 +32,8 @@
 #define PUMP_EE_ADDR_I(i)   (PUMP_EE_ADDR + (i * Pump::ee_size()))
 #define PUMP_EE_SIZE        (NUM_PUMPS*Pump::ee_size())
 
+
+#define DEFAULT_MS_PER_ML 5000
 
 // Network.
 RF24IPInterface rf24( 9, RF24_CE, RF24_CSN );
@@ -41,7 +43,7 @@ class Pump {
   public:
     Pump( int pin, unsigned index ) 
         : m_pin(pin), m_index(index), m_on(false), m_speed(0), m_last_speed(255)
-        , m_ms_per_ml(24000), m_disp_start(0), m_disp_ml(0)
+        , m_ms_per_ml(DEFAULT_MS_PER_ML), m_disp_start(0), m_disp_ml10(0)
     {}
     void setup( bool useSettings ) {
        pinMode( m_pin, OUTPUT ); 
@@ -50,7 +52,7 @@ class Pump {
         } else {
             saveSettings();
         }
-        setSpeed(10);
+        setSpeed(20);
     }
     void setSpeed( int pct ) {
         if (pct > 100)
@@ -62,16 +64,19 @@ class Pump {
     void setOn( bool onOff ) {
         m_on = onOff;
         m_disp_start = 0;
-        m_disp_ml = 0;
+        m_disp_ml10 = 0;
+    }
+    bool isOn() {
+        return m_on;
     }
     void update() {
         if (m_on) {
             // If there are params set, then turn off if limits reached.
             // If manually on, just leave it on.
-            if (m_disp_start && m_disp_ml && m_ms_per_ml) {
+            if (m_disp_start && m_disp_ml10 && m_ms_per_ml) {
                  unsigned long dt = (millis() - m_disp_start);
-                 long ml_pumped = dt / m_ms_per_ml;
-                 if ((ml_pumped >= m_disp_ml) || (ml_pumped < 0)) {
+                 long ml10_pumped = (dt * 10)/ m_ms_per_ml;
+                 if ((ml10_pumped >= m_disp_ml10) || (ml10_pumped < 0)) {
                     m_on = false;
                     m_disp_end = millis();
                 }
@@ -82,7 +87,7 @@ class Pump {
             value = m_speed;
         } else {
             value = 255;
-            m_disp_ml = 0;
+            m_disp_ml10 = 0;
         }
         analogWrite( m_pin, value );
 
@@ -94,21 +99,22 @@ class Pump {
         }
     }
 
-    bool startDispense( unsigned short ml ) {
+    // Dispense the given number of 10ths of ml.
+    bool startDispense( unsigned short ml10 ) {
         m_disp_start = millis();
-        m_disp_ml = ml;
-        if (ml > 0)
+        m_disp_ml10 = ml10;
+        if (ml10 > 0)
             m_on = true;
     }
 
     void startCal() {
-        startDispense(calMl());
+        startDispense(calMl10());
     }
     // Value is in tenths of ml.
-    void setActualMl( unsigned short ml ) {
-        if (m_disp_start && m_disp_end && (m_disp_end > m_disp_start) && ml) {
+    void setActualMl( unsigned short ml10 ) {
+        if (m_disp_start && m_disp_end && (m_disp_end > m_disp_start) && ml10) {
             unsigned long t = m_disp_end - m_disp_start;
-            m_ms_per_ml = (t * 10UL)/ (unsigned long)ml;
+            m_ms_per_ml = (t * 10UL)/ (unsigned long)ml10;
         }
     }
 
@@ -124,7 +130,7 @@ class Pump {
 
         // Never allow m_ms_per_ml to be garbage.
         if ((m_ms_per_ml == 0) || (m_ms_per_ml > 50000))
-            m_ms_per_ml = 24000;
+            m_ms_per_ml = DEFAULT_MS_PER_ML;
     }
 
     void saveSettings() {
@@ -133,8 +139,8 @@ class Pump {
         EEPROM.put( addr, m_ms_per_ml );
         addr += sizeof(m_ms_per_ml);
     }
-    unsigned short calMl() {
-        return 10;
+    unsigned short calMl10() {
+        return 100;
     }
 
   protected:
@@ -146,7 +152,7 @@ class Pump {
     unsigned long m_ms_per_ml;
     unsigned long m_disp_start;
     unsigned long m_disp_end;
-    unsigned m_disp_ml;
+    unsigned m_disp_ml10;
 };
 
 Pump pump0(SPEED_PIN_0,0);
@@ -216,6 +222,21 @@ void setup() {
     #endif
 }
 
+static void getStatus( Command* cmd )
+{
+    StaticJsonBuffer<200> jsonBuffer;
+
+    JsonObject& json = jsonBuffer.createObject();
+    JsonArray& on = json.createNestedArray("on");
+    int numActive = 0;
+    for ( int i=0; i < NUM_PUMPS; i++ ) {
+        if ( pumps[i]->isOn() ) 
+            numActive++;
+        on.add( pumps[i]->isOn() );
+    }
+    json["num_active"] = numActive;
+    cmd->ack( json );
+}
 static ArduinoSerialIO sis;
 static CommandParser serialParser( g_commandDescrs, &sis );
 static Command serialCmd;
@@ -246,6 +267,10 @@ void processCommand()
                 break;
 
             case CmdPing:
+                break;
+
+            case CmdStatus:
+                getStatus(cmd);
                 break;
 
             case CmdPumpOn: {

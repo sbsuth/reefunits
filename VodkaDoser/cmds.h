@@ -6,6 +6,7 @@
 #else
 
 X(  CmdPing,        "ping", false,  CmdArgNone )
+X(  CmdStatus,      "stat", false,  CmdArgNone )
 X(  CmdPumpOn,      "pon",  true,   CmdArgInt )
 X(  CmdPumpSpeed,   "pspd", true,   CmdArgInt )
 X(  CmdDispense,    "disp",  true,   CmdArgInt )
