@@ -6,8 +6,8 @@
 
 class DosingPump : public DRV8825 {
   public: 
-    DosingPump( int dir, int step, int isleep, unsigned confAddr, DecayingState<bool>* extDisable=0 ) 
-        : DRV8825( 200, dir, step )
+    DosingPump( int steps, int dir, int step, int isleep, unsigned confAddr, DecayingState<bool>* extDisable=0 ) 
+        : DRV8825( steps, dir, step )
         , m_isleep(isleep)
         , m_disabled(true)
         , m_stepsPerMl(250)
