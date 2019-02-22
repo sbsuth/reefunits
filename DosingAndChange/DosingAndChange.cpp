@@ -92,17 +92,24 @@ DecayingState<bool>* extPausePtr = 0;
 #define PUMP_EE_ADDR_I(i)   (PUMP_EE_ADDR + (i * DosingPump::ee_size()))
 #define PUMP_EE_SIZE        (NUM_PUMPS*DosingPump::ee_size())
 
+#define SLOW_PUMP_STEPS 200
+#define FAST_PUMP_STEPS 6400
+
+#define SLOW_PUMP_RPM 200
+#define FAST_PUMP_RPM 360
+
 #if PUMPS
 // Dosing pumps
-DosingPump calcPump(  DOSING_DIR,   CALC_STEP,      DOSING_I_SLEEP, PUMP_EE_ADDR_I(0), extPausePtr);
-DosingPump alkPump(   DOSING_DIR,   ALK_STEP,       DOSING_I_SLEEP, PUMP_EE_ADDR_I(1), extPausePtr);
-DosingPump magPump(   DOSING_DIR,   MAG_STEP,       DOSING_I_SLEEP, PUMP_EE_ADDR_I(2), extPausePtr);
-DosingPump oldOutPump(H2OX_DIR,     OLD_OUT_STEP,   H2OX_I_SLEEP,   PUMP_EE_ADDR_I(3), extPausePtr);
-DosingPump newInPump( H2OX_DIR,     NEW_IN_STEP,    H2OX_I_SLEEP,   PUMP_EE_ADDR_I(4), extPausePtr);
+DosingPump calcPump(  SLOW_PUMP_STEPS, DOSING_DIR,   CALC_STEP,      DOSING_I_SLEEP, PUMP_EE_ADDR_I(0), extPausePtr);
+DosingPump alkPump(   SLOW_PUMP_STEPS, DOSING_DIR,   ALK_STEP,       DOSING_I_SLEEP, PUMP_EE_ADDR_I(1), extPausePtr);
+DosingPump magPump(   SLOW_PUMP_STEPS, DOSING_DIR,   MAG_STEP,       DOSING_I_SLEEP, PUMP_EE_ADDR_I(2), extPausePtr);
+DosingPump oldOutPump(FAST_PUMP_STEPS, H2OX_DIR,     OLD_OUT_STEP,   H2OX_I_SLEEP,   PUMP_EE_ADDR_I(3), extPausePtr);
+DosingPump newInPump( FAST_PUMP_STEPS, H2OX_DIR,     NEW_IN_STEP,    H2OX_I_SLEEP,   PUMP_EE_ADDR_I(4), extPausePtr);
 
 DosingPump* pumps[NUM_PUMPS] = {&calcPump, &alkPump, &magPump, &oldOutPump, &newInPump};
+#define I_FIRST_FAST_PUMP 3
 //unsigned short pumpRPM[NUM_PUMPS] = {200, 200, 200, 200, 200};
-const unsigned short pumpRPM = 200;
+//const unsigned short pumpRPM = 200;
 #endif
 
 
@@ -117,7 +124,7 @@ void setup() {
     unsigned char sig = 0;
     EEPROM.get( SIG_EE_ADDR, sig );
     bool useSettings = (sig == EE_SIG);
-    EEPROM.put( SIG_EE_ADDR, EE_SIG );
+    EEPROM.put( SIG_EE_ADDR, (char)EE_SIG );
 
     floatSwitch.setup();
   
@@ -127,7 +134,7 @@ void setup() {
 #if PUMPS
     // Init pumps.
     for ( int i=0; i < NUM_PUMPS; i++ ) {
-        pumps[i]->init( pumpRPM, useSettings );
+        pumps[i]->init( (i>=I_FIRST_FAST_PUMP) ? FAST_PUMP_RPM : SLOW_PUMP_RPM, useSettings );
     }
     pinMode( DOSING_SLEEP, OUTPUT );
     pinMode( H2OX_SLEEP, OUTPUT );
