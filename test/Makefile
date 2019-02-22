@@ -1,8 +1,8 @@
 PROJECT = test
 MCU := atmega328p
 ARDUINO_VERSION := 10607
-PORT := \\.\COM4
-USE_DALLAS=1
+PORT := \\.\COM5
+USE_STEPPER =1
 
 include ../utils/Makefile.arduino
 

@@ -10,73 +10,32 @@
 #include <Arduino.h>
 
 #include "Command.h"
+//#include <DRV8825.h>
+#include <EEPROM.h>
+#include "DosingPump.h"
 
-#define SPEED_PIN_0 9
-#define SPEED_PIN_1 10
-#define NUM_PUMPS 2
+#define DIR_PIN 8
+#define STEP_PIN 7
+#define ENABLE_PIN 9
 
-class Pump {
-  public:
-    Pump( int pin ) 
-        : m_pin(pin), m_on(false), m_speed(0), m_last_speed(1)
-    {}
-    void setup() {
-       pinMode( m_pin, OUTPUT ); 
-    }
-    void setSpeed( int pct ) {
-        if (pct > 100)
-            pct = 100;
-        else if (pct < 0)
-            pct = 0;
-        m_speed = 255 - (((unsigned long)pct * 255)/100);
-Serial.print("Set m_speed to ");Serial.println(m_speed);
-    }
-    void setOn( bool onOff ) {
-        m_on = onOff;
-Serial.print("Set onOff to ");Serial.println(m_on);
-    }
-    void update() {
-        unsigned value = m_on ? m_speed : 255;
-        analogWrite( m_pin, value );
-        if (value != m_last_speed) {
-            Serial.print("Set speed for ");Serial.write(m_pin);Serial.print(" to ");Serial.println(value);
-            m_last_speed = value;
-        }
-    }
-  protected:
-    unsigned char m_pin;
-    unsigned char m_on;
-    unsigned char m_speed;
-    unsigned char m_last_speed;
-};
+const unsigned short rpm = 350;
+#define STEPS_PER_REV 6400
 
-Pump pump0(SPEED_PIN_0);
-Pump pump1(SPEED_PIN_1);
-Pump* pumps[NUM_PUMPS] = {&pump0, &pump1};
+#define EE_SIG 123
+#define SIG_EE_ADDR         0
+#define SIG_EE_SIZE         sizeof(unsigned char)
+#define PUMP_EE_ADDR        SIG_EE_ADDR + SIG_EE_SIZE
 
-// Set the prescale values on the timers:
-// Avoid doing timer 0.
-void setupTimers()
-{
-    // On mega for phase correct mode:
-    //  1 : 31 kHz
-    //  2 : 3.9 kHz
-    //  3 : 490 Hz (default)
-    //  4 : 30 Hz
-    //  5 : less
-    //
-    // For fast mode, ~double these.
-    //
-    // Timers for UNO pins:
-    //  #0 : pins 5, 6
-    //  #1 : pins 9, 10
-    //  #2 : pins 3, 11
-    //
-    //int iScale = 2; // Smooth, but whines
-    int iScale = 1; // Quiet, but out of spec rance of 20kHz
-    PRESCALE_TIMER( 1, iScale );
+//BasicStepperDriver pump( STEPS_PER_REV, DIR_PIN, STEP_PIN );
+#define NUM_PUMPS 1
+DosingPump pump( STEPS_PER_REV, DIR_PIN, STEP_PIN, 0, PUMP_EE_ADDR );
+DosingPump* pumps[NUM_PUMPS] = {&pump};
+
+static void saveSettings() {
+    for ( int ipump=0; ipump < NUM_PUMPS; ipump++ ) {
+        pumps[ipump]->saveSettings();
+    }
 }
-
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -84,12 +43,14 @@ void setup() {
     #if DEBUG_STARTUP
     Serial.println(F("Start"));
     #endif
+    
+    pinMode( ENABLE_PIN, OUTPUT );
 
-    setupTimers();
-
-    for ( int i=0; i < NUM_PUMPS; i++ ) {
-        pumps[i]->update();
-    }
+    unsigned char sig = 0;
+    EEPROM.get( SIG_EE_ADDR, sig );
+    bool useSettings = (sig == EE_SIG);
+    EEPROM.put( SIG_EE_ADDR, (char)EE_SIG );
+    pump.init(rpm,useSettings);
 
     #if DEBUG_STARTUP
     Serial.println(F("Ready"));
@@ -123,23 +84,65 @@ void processCommand()
                 break;
 
             case CmdPumpOn: {
-				int pump = cmd->ID();
-                if ((pump < 0) || (pump >= NUM_PUMPS))
-                    break;
+				int ipump = cmd->ID();
                 int onOff = 0;
 				cmd->arg(0)->getInt(onOff);
-                pumps[pump]->setOn( onOff );
-                Serial.print("Pump #");Serial.print(pump);Serial.print(", on=");Serial.println(onOff);
+                Serial.print("Pump #");Serial.print(ipump);Serial.print(", on=");Serial.println(onOff);
+
+                #if 1
+                if (onOff)
+                    pump.rotate(360);
+                #endif
+
                 break;
             }
             case CmdPumpSpeed: {
-				int pump = cmd->ID();
-                if ((pump < 0) || (pump >= NUM_PUMPS))
-                    break;
+				int ipump = cmd->ID();
                 int speed = 0;
 				cmd->arg(0)->getInt(speed);
-                pumps[pump]->setSpeed( speed );
-                Serial.print("Pump #");Serial.print(pump);Serial.print(", speed=");Serial.println(speed);
+                Serial.print("Pump #");Serial.print(ipump);Serial.print(", speed=");Serial.println(speed);
+                break;
+            }
+            case CmdDispense: {
+                p = cmd->ID();
+                if ((p >= NUM_PUMPS) || (p < 0))
+                    break;
+                cmd->arg(0)->getInt(arg);
+                #if DEBUG_CMD
+				Serial.print("CHANGE: Got dispense on ");
+				Serial.print(p);
+                Serial.print(" for ");
+                Serial.print(arg);
+                Serial.println("ml");
+				#endif
+                pumps[p]->startDispense(arg);
+                break;
+            }
+            case CmdCal: {
+                int p = cmd->ID();
+                if ((p >= NUM_PUMPS) || (p < 0))
+                    break;
+                #if DEBUG_CMD
+				Serial.print("CHANGE: Got cal on ");
+				Serial.println(p);
+				#endif
+                pumps[p]->startCal();
+                break;
+            }
+            case CmdCalRslt: {
+                int p = cmd->ID();
+                if ((p >= NUM_PUMPS) || (p < 0))
+                    break;
+                cmd->arg(0)->getInt(arg);
+                #if DEBUG_CMD
+				Serial.print("CHANGE: Got actual for ");
+				Serial.print(p);
+                Serial.print(" of ");
+                Serial.print(arg);
+                Serial.println("ml");
+				#endif
+                pumps[p]->setActualMl(arg);
+                saveSettings();
                 break;
             }
             default:
@@ -163,10 +166,12 @@ void processCommand()
 
 // the loop function runs over and over again forever
 void loop() {
-  processCommand();
+    processCommand();
 
-  for ( int i=0; i < NUM_PUMPS; i++ ) {
-    pumps[i]->update();
-  }
+    unsigned char en[1] = {ENABLE_PIN};
+
+    pump.update(en);
+    if (en[0] > 0)
+        digitalWrite( en[0], LOW );
 }
 
