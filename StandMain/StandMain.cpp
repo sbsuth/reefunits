@@ -53,6 +53,8 @@ SingleDistanceSensor distanceSensor( TRIG, ECHO, 50 );
 Switch floatSwitch( FLOAT_SW, LOW );
 
 #define NPUMPS 4
+#define NUM_PUMP_SETS 2
+typedef ControllablePump<NUM_PUMP_SETS> StandControllablePump;
 
 #define EE_SIG              129
 #define SIG_EE_ADDR         0
@@ -62,18 +64,18 @@ Switch floatSwitch( FLOAT_SW, LOW );
 #define T_CTRL_EE_SIZE      TempController::ee_size()
 
 #define PUMP_EE_ADDR        T_CTRL_EE_ADDR + T_CTRL_EE_SIZE
-#define PUMP_EE_ADDR_I(i)   (PUMP_EE_ADDR + (i * ControllablePump::ee_size()))
-#define PUMP_EE_SIZE        (NPUMPS*ControllablePump::ee_size())
+#define PUMP_EE_ADDR_I(i)   (PUMP_EE_ADDR + (i * StandControllablePump::ee_size()))
+#define PUMP_EE_SIZE        (NPUMPS*StandControllablePump::ee_size())
 
 #define NEXT_EE_ADDR        PUMP_EE_ADDR + PUMP_EE_SIZE
 
                         // PIN, SWITCH, MINPCT
-ControllablePump mainCirc( 5,   2,      20, PUMP_EE_ADDR_I(0), rf24 );
-ControllablePump skimmer(  4,   3,      20, PUMP_EE_ADDR_I(1), rf24 );
-ControllablePump ph1(      6,   0,      0,  PUMP_EE_ADDR_I(2), rf24 );
-ControllablePump ph2(      7,   1,      0,  PUMP_EE_ADDR_I(3), rf24 );
+StandControllablePump mainCirc( 5,   2,      20, PUMP_EE_ADDR_I(0), rf24 );
+StandControllablePump skimmer(  4,   3,      20, PUMP_EE_ADDR_I(1), rf24 );
+StandControllablePump ph1(      6,   0,      0,  PUMP_EE_ADDR_I(2), rf24 );
+StandControllablePump ph2(      7,   1,      0,  PUMP_EE_ADDR_I(3), rf24 );
 
-ControllablePump* pumps[NPUMPS] = {&mainCirc,  &skimmer, &ph1, &ph2 };
+StandControllablePump* pumps[NPUMPS] = {&mainCirc,  &skimmer, &ph1, &ph2 };
 
 TempController tempController( HEAT_ON, TEMP_DATA, TEMP_RES, T_CTRL_EE_ADDR );
 
@@ -188,13 +190,14 @@ static void getStatus( Command* cmd )
 
 static void getPumpStatus( Command* cmd )
 {
-    StaticJsonBuffer<936> jsonBuffer;
+    StaticJsonBuffer<992> jsonBuffer;
 
     JsonArray& array = jsonBuffer.createArray();
     for (int ipump=0; ipump < 4; ipump++ ) {
-        ControllablePump* pump = pumps[ipump];
+        StandControllablePump* pump = pumps[ipump];
         JsonObject& jpump = array.createNestedObject();
         jpump["on"] = (pump->getCurSpeed() > 0) ? true : false;
+        jpump["iset"] = (int)pump->getCurSet();
         jpump["mode"] = (int)pump->getMode();
         jpump["cur_speed"] = pump->getCurSpeedPct();
         jpump["top_speed"] = pump->getTopSpeedPct();
@@ -209,8 +212,8 @@ static void getPumpStatus( Command* cmd )
 
    /*
     https://arduinojson.org/assistant/
-    {"on":false,"mode":1,"cur_speed":0,"top_speed":0,"slow_speed":0,"ramp_sec":1,"hold_sec":10,"ramp_range":0,"hold_range":0,"temp_shutdown":0}
-    Copied into an array of 4 of these: 924
+    {"on":false,"iset":0,"mode":1,"cur_speed":0,"top_speed":0,"slow_speed":0,"ramp_sec":1,"hold_sec":10,"ramp_range":0,"hold_range":0,"temp_shutdown":0}
+    Copied into an array of 4 of these: 992
    */
 }
 
@@ -316,21 +319,21 @@ void processCommand()
             }
             case CmdTempShutdown: {
                 int secs;
-                ControllablePump::ShutdownKind kinds[2] = {ControllablePump::ShutdownUnset,ControllablePump::ShutdownUnset};
+                StandControllablePump::ShutdownKind kinds[2] = {StandControllablePump::ShutdownUnset,StandControllablePump::ShutdownUnset};
                 cmd->arg(0)->getInt(secs);
                 if (secs <= 0) {
-                    kinds[0] = kinds[1] = ControllablePump::ShutdownCancel;
+                    kinds[0] = kinds[1] = StandControllablePump::ShutdownCancel;
                 } else {
                     int kind;
-                    if (cmd->arg(1)->getInt(kind) && (kind > 0) && (kind < ControllablePump::NumShutdowns)) {
-                        kinds[0] = (ControllablePump::ShutdownKind)kind;
+                    if (cmd->arg(1)->getInt(kind) && (kind > 0) && (kind < StandControllablePump::NumShutdowns)) {
+                        kinds[0] = (StandControllablePump::ShutdownKind)kind;
                     }
-                    if (cmd->arg(2)->getInt(kind) && (kind > 0) && (kind < ControllablePump::NumShutdowns)) {
-                        kinds[1] = (ControllablePump::ShutdownKind)kind;
+                    if (cmd->arg(2)->getInt(kind) && (kind > 0) && (kind < StandControllablePump::NumShutdowns)) {
+                        kinds[1] = (StandControllablePump::ShutdownKind)kind;
                     }
                 }
                 for (int i=0; i < NPUMPS; i++) {
-                    ControllablePump::ShutdownKind kind = kinds[i/2]; // 0&1 are rtn & skimmer, 2&3 are PHs.
+                    StandControllablePump::ShutdownKind kind = kinds[i/2]; // 0&1 are rtn & skimmer, 2&3 are PHs.
                     pumps[i]->setTempShutoff( secs, kind );
                 }
                 break;
@@ -344,9 +347,23 @@ void processCommand()
                 cmd->arg(0)->getInt(mode);
                 cmd->arg(1)->getFloat(holdArg);
                 cmd->arg(2)->getFloat(rampArg);
-                if ((mode < 0) || (mode >= ControllablePump::NumModes))
+                if ((mode < 0) || (mode >= StandControllablePump::NumModes))
                     break;
-                pumps[ipump]->setMode( (ControllablePump::Mode)mode, holdArg, rampArg );
+                pumps[ipump]->setMode( (StandControllablePump::Mode)mode, holdArg, rampArg );
+                break;
+            }
+            case CmdPumpCurSet: {
+                // ID is the value, and there can be up to 3 pumps  in args.
+                int iset = cmd->ID();
+                if ((iset >= StandControllablePump::NumSets) || (iset < 0))
+                    break;
+                int ipump=0;
+                for ( unsigned i=0; i < 3; i++ ) {
+                    cmd->arg(i)->getInt(ipump);
+                    if ((ipump < 0) || (ipump >= NPUMPS))
+                        continue;
+                    pumps[ipump]->setCurSet( iset );
+                }
                 break;
             }
             case CmdCalEC: {

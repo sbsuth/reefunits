@@ -5,19 +5,35 @@
 #include "RF24Interface.h"
 #include "RemoteSetting.h"
 
-class ControllablePump
+class ControllablePumpBase 
+{
+  public:
+    static int    m_rand;
+};
+
+template <int NUM_SETS>
+class ControllablePump : public ControllablePumpBase
 {
   public:
     ControllablePump(   unsigned char ctrlPin, unsigned char swAddr, unsigned char minPct, unsigned confAddr, RF24IPInterface& rf24 )
       : m_pin(ctrlPin), m_swAddr(swAddr), m_minPct(minPct), m_confAddr(confAddr)
-      , m_curSpeed(0), m_topSpeed(0), m_slowSpeed(0), m_mode(Off)
-      , m_rampSec(5), m_holdSec(30), m_rampRangeMs(0), m_holdRangeMs(0)
+      , m_curSpeed(0), m_curSet(0)
       , m_rampOffset(0), m_holdOffset(0)
       , m_lastChangeTime(0), m_lastWriteTime(0), m_tempShutoffUntil(0), m_tempShutoffMode(ShutdownUnset)
       , m_upDown(0), m_retries(0)
       , m_rf24(rf24)
       , m_switch(this)
-    {}
+    {
+        for ( int i=0; i < NUM_SETS; i++ ) {
+            m_topSpeed[i] = 0;
+            m_slowSpeed[i] = 0;
+            m_mode[i] = Off;
+            m_rampSec[i] = 5;
+            m_holdSec[i] = 30;
+            m_rampRangeMs[i] = 0;
+            m_holdRangeMs[i] = 0;
+        }
+    }
 
     enum Mode {
         Constant = 0,
@@ -39,6 +55,10 @@ class ControllablePump
         NumShutdowns    = 5
     };
 
+    enum {
+        NumSets = NUM_SETS
+    };
+
     //static const unsigned ReassertSwitchInterval = 10 * 1000;
     static const unsigned ReassertSwitchInterval = 60 * 1000U;
 
@@ -51,48 +71,51 @@ class ControllablePump
         saveSettings();
       }
     }
-    unsigned char getCurSpeed() {
+    unsigned char getCurSpeed() const {
         return m_curSpeed;
     }
-    unsigned char getTopSpeed() {
-        return m_topSpeed;
+    unsigned char getTopSpeed() const {
+        return m_topSpeed[m_curSet];
     }
-    unsigned char getSlowSpeed() {
-        return m_slowSpeed;
+    unsigned char getSlowSpeed() const {
+        return m_slowSpeed[m_curSet];
     }
-    unsigned char getCurSpeedPct() {
+    unsigned char getCurSpeedPct() const {
         return getSpeedPct(m_curSpeed);
     }
-    unsigned char getTopSpeedPct() {
-        return getSpeedPct(m_topSpeed);
+    unsigned char getTopSpeedPct() const {
+        return getSpeedPct(getTopSpeed());
     }
-    unsigned char getSlowSpeedPct() {
-        return getSpeedPct(m_slowSpeed);
+    unsigned char getSlowSpeedPct() const {
+        return getSpeedPct(getSlowSpeed());
     }
     static unsigned char getSpeedPct( unsigned char speed ) {
         return ((speed * 100.0) + 50.0)/255.0;
     }
 
-    Mode          getMode() {
-        return m_mode;
+    Mode          getMode() const {
+        return m_mode[m_curSet];
     }
-    unsigned char getRampSec() {
-        return m_rampSec;
+    unsigned char getCurSet() const {
+        return m_curSet;
     }
-    unsigned char getHoldSec() {
-        return m_holdSec;
+    unsigned char getRampSec() const {
+        return m_rampSec[m_curSet];
     }
-    unsigned long getRampRangeMs() {
-        return m_rampRangeMs;
+    unsigned char getHoldSec() const {
+        return m_holdSec[m_curSet];
     }
-    unsigned long getHoldRangeMs() {
-        return m_holdRangeMs;
+    unsigned long getRampRangeMs() const {
+        return m_rampRangeMs[m_curSet];
     }
-    unsigned char getRampRangePct() {
-        return getRangePct(m_rampRangeMs,m_rampSec);
+    unsigned long getHoldRangeMs() const {
+        return m_holdRangeMs[m_curSet];
     }
-    unsigned char getHoldRangePct() {
-        return getRangePct(m_holdRangeMs,m_holdSec);
+    unsigned char getRampRangePct() const {
+        return getRangePct(getRampRangeMs(),getRampSec());
+    }
+    unsigned char getHoldRangePct() const {
+        return getRangePct(getHoldRangeMs(),getHoldSec());
     }
     static unsigned char getRangePct( unsigned long range_ms, unsigned char hold_sec ) {
         // range is in ms, hold is in sec, we want the ration as a percent.
@@ -114,39 +137,53 @@ class ControllablePump
     }
 
     void setTopSpeed( unsigned char s ) {
-        setSpeedPct( m_topSpeed, s );
+        setSpeedPct( m_topSpeed[m_curSet], s );
     }
 
     void setSlowSpeed( unsigned char s ) {
-        setSpeedPct( m_slowSpeed, s );
+        setSpeedPct( m_slowSpeed[m_curSet], s );
+    }
+
+    void setCurSet( unsigned char cs ) {
+        if (cs >= NUM_SETS)
+            return;
+        m_curSet = cs;
+        setMode( getMode(), -1.0, -1.0 );
     }
 
     void setMode(   Mode m, float holdArg, float rampArg=0.0 ) {
 
-        m_mode = m;
+        m_mode[m_curSet] = m;
 
-        // times are set as "sec.pct" where pct gives the random range
-        // as a percentage of 'sec', and where 'sec' is the centerpoint of the range.
-        float sec = int(holdArg);
-        float pct = (holdArg - sec);
-        m_holdSec = sec;
-        m_holdRangeMs = int((pct * (float)sec) * 1000.0); // ms
+        float sec;
+        float pct;
+        if (holdArg >= 0.0) {
+            // times are set as "sec.pct" where pct gives the random range
+            // as a percentage of 'sec', and where 'sec' is the centerpoint of the range.
+            sec = int(holdArg);
+            pct = (holdArg - sec);
+            m_holdSec[m_curSet] = sec;
+            m_holdRangeMs[m_curSet] = int((pct * (float)sec) * 1000.0); // ms
+        }
 
-        sec = int(rampArg);
-        pct = (rampArg - sec);
-        m_rampSec = sec;
-        m_rampRangeMs = long((pct * (float)sec) * 1000.0); // ms
+        if (rampArg >= 0.0) {
+            sec = int(rampArg);
+            pct = (rampArg - sec);
+            m_rampSec[m_curSet] = sec;
+            m_rampRangeMs[m_curSet] = long((pct * (float)sec) * 1000.0); // ms
+        }
 
         m_upDown = 0;
         m_lastChangeTime = 0;
         #if DEBUG_PUMP
         Serial.print("PUMP: ");Serial.print(m_swAddr);
-        Serial.print(", mode=");Serial.print(m_mode);
+        Serial.print(", curSet=");Serial.print(m_curSet);
+        Serial.print(", mode=");Serial.print(m_mode[m_curSet]);
         Serial.print(", holdArg=");Serial.print(holdArg);
-        Serial.print(", holdSec=");Serial.print(m_holdSec);
-        Serial.print(", rampSec=");Serial.print(m_rampSec);
-        Serial.print(", holdRange=");Serial.print(m_holdRangeMs);
-        Serial.print(", rampRange=");Serial.print(m_rampRangeMs);
+        Serial.print(", holdSec=");Serial.print(m_holdSec[m_curSet]);
+        Serial.print(", rampSec=");Serial.print(m_rampSec[m_curSet]);
+        Serial.print(", holdRange=");Serial.print(m_holdRangeMs[m_curSet]);
+        Serial.print(", rampRange=");Serial.print(m_rampRangeMs[m_curSet]);
         Serial.println("");
         #endif
     }
@@ -157,13 +194,13 @@ class ControllablePump
 
         // Calculate a new speed in modes that do that.
         unsigned char minSpeed = (m_minPct ? (((m_minPct+1)*255)/100) : 1); // Never actually switch off.
-        if (m_slowSpeed > minSpeed)
-            minSpeed = m_slowSpeed;
-        if (minSpeed > m_topSpeed)
-            minSpeed = m_topSpeed;
+        if (getSlowSpeed() > minSpeed)
+            minSpeed = getSlowSpeed();
+        if (minSpeed > getTopSpeed())
+            minSpeed = getTopSpeed();
         unsigned long curTime = millis();
-        unsigned long holdMsec = m_holdSec*1000UL;
-        unsigned long rampMsec = m_rampSec*1000UL;
+        unsigned long holdMsec = getHoldSec()*1000UL;
+        unsigned long rampMsec = getRampSec()*1000UL;
         bool updateOffset = false;
         bool updateSwitch = false;
         unsigned long elapsedTime = (curTime - m_lastChangeTime);
@@ -179,7 +216,7 @@ class ControllablePump
         }
         
         if (!inTempShutdown()) {
-            switch (m_mode) {
+            switch (getMode()) {
                 case Square: {
                     if (elapsedTime > (holdMsec + m_holdOffset)) {
                         if (m_upDown > 0) {
@@ -187,7 +224,7 @@ class ControllablePump
                             newSpeed = minSpeed;
                         } else {
                             m_upDown = 1;
-                            newSpeed = m_topSpeed;
+                            newSpeed = getTopSpeed();
                         }
                         updateOffset = true;
                         updateSwitch = true;
@@ -196,7 +233,7 @@ class ControllablePump
                     break;
                 }
                 case Ramp: {
-                    unsigned long speedRange = (m_topSpeed - minSpeed);
+                    unsigned long speedRange = (getTopSpeed() - minSpeed);
                     if (m_upDown == 0) {
                         if (elapsedTime > (holdMsec + m_holdOffset)) {
                             m_upDown = (m_curSpeed > (minSpeed + (speedRange/2))) ? -1 : 1;
@@ -213,14 +250,14 @@ class ControllablePump
                             speedChange /= 16UL; // Denom was promoted to avoid 0 values above.
                             if (m_upDown > 0) {
                                 newSpeed = (unsigned)m_curSpeed + speedChange;
-                                if (newSpeed > m_topSpeed)
-                                    newSpeed = m_topSpeed;
+                                if (newSpeed > getTopSpeed())
+                                    newSpeed = getTopSpeed();
                             } else {
                                 newSpeed = (unsigned)m_curSpeed - speedChange;
                                 if (newSpeed < minSpeed)
                                     newSpeed = minSpeed;
                             }
-                            if ((newSpeed==minSpeed) || (newSpeed==m_topSpeed))
+                            if ((newSpeed==minSpeed) || (newSpeed==getTopSpeed()))
                                 m_upDown = 0;
                         }
                     }
@@ -230,7 +267,7 @@ class ControllablePump
                     if (elapsedTime < 1024) // Avoid unnecessary calculation.
                         break; 
 
-                    float speedRange = (m_topSpeed - minSpeed);
+                    float speedRange = (getTopSpeed() - minSpeed);
                     unsigned long period = (2 * (rampMsec + m_rampOffset));
                     //unsigned long tOffset = curTime % period;
                     unsigned long tOffset = (curTime - m_cycleStart);
@@ -238,8 +275,8 @@ class ControllablePump
                     float speed = ((sin(radians) + 1.0) * (speedRange/2.0)) + (float)minSpeed;
                     newSpeed = (int)(speed + 0.5);
 
-                    if (newSpeed > m_topSpeed) {
-                        newSpeed = m_topSpeed;
+                    if (newSpeed > getTopSpeed()) {
+                        newSpeed = getTopSpeed();
                     } else if (newSpeed < minSpeed) {
                         newSpeed = minSpeed;
                     }
@@ -263,7 +300,7 @@ class ControllablePump
                 }
                 case Slow:
                 case Constant:
-                    newSpeed = (m_mode == Slow) ? m_slowSpeed : m_topSpeed;
+                    newSpeed = (getMode() == Slow) ? getSlowSpeed() : getTopSpeed();
                     break;
                 case Test:
                     // Turn off, but don't auto-switch
@@ -274,16 +311,16 @@ class ControllablePump
                     newSpeed = 0;
                     break;
                 default:
-                    newSpeed = m_topSpeed;
+                    newSpeed = getTopSpeed();
             }
         } else {
             // Temp shutdown.
             switch (m_tempShutoffMode) {
                 case ShutdownHalf:
-                    newSpeed = m_topSpeed / 2;
+                    newSpeed = getTopSpeed() / 2;
                     break;
                 case ShutdownFull:
-                    newSpeed = m_topSpeed;
+                    newSpeed = getTopSpeed();
                     break;
                 case ShutdownOff:
                 default:
@@ -294,8 +331,8 @@ class ControllablePump
 
         // If changing, update random offsets if set.
         if (updateOffset) {
-            m_rampOffset = calcRandom( m_rampRangeMs );
-            m_holdOffset = calcRandom( m_holdRangeMs );
+            m_rampOffset = calcRandom( getRampRangeMs() );
+            m_holdOffset = calcRandom( getHoldRangeMs() );
         }
 
         syncSwitch( newSpeed, updateSwitch);
@@ -318,9 +355,9 @@ class ControllablePump
         Serial.print(F("PUMP: "));Serial.print(m_swAddr);
         Serial.print(F(": change at:"));Serial.print(millis());
         Serial.print(F(", m_lastChangeTime="));Serial.print(m_lastChangeTime);
-        Serial.print(F(", m_holdSec="));Serial.print((int)m_holdSec);
+        Serial.print(F(", m_holdSec="));Serial.print((int)getHoldSec());
         Serial.print(F(", m_holdOffset="));Serial.print((int)m_holdOffset);
-        Serial.print(F(", m_rampSec="));Serial.print((int)m_rampSec);
+        Serial.print(F(", m_rampSec="));Serial.print((int)getRampSec());
         Serial.print(F(", m_rampOffset="));Serial.print((int)m_rampOffset);
         Serial.print(F(", inShutdown="));Serial.print(m_tempShutoffUntil);
         Serial.println("");
@@ -396,57 +433,89 @@ class ControllablePump
 
     static unsigned ee_size() {
         return sizeof(m_mode) + sizeof(m_topSpeed) + sizeof(m_slowSpeed) + sizeof(m_holdSec) + sizeof(m_rampSec)
-                + sizeof(m_holdRangeMs) + sizeof(m_rampRangeMs);
+                + sizeof(m_holdRangeMs) + sizeof(m_rampRangeMs) + sizeof(m_curSet);
+    }
+
+    void restoreSettings( unsigned char i, unsigned& addr ) {
+
+        EEPROM.get( addr, m_mode[i] );
+        addr += sizeof(m_mode[0]);
+
+        bool skip = false;
+        if ((unsigned char)m_mode[i] == 0xFF) {
+            m_mode[i] = Off;
+            skip = true;
+        }
+
+        if (!skip)
+            EEPROM.get( addr, m_topSpeed[i] );
+        addr += sizeof(m_topSpeed[0]);
+
+        if (!skip)
+            EEPROM.get( addr, m_slowSpeed[i] );
+        addr += sizeof(m_slowSpeed[0]);
+
+        if (!skip)
+            EEPROM.get( addr, m_holdSec[i] );
+        addr += sizeof(m_holdSec[0]);
+
+        if (!skip)
+            EEPROM.get( addr, m_rampSec[i] );
+        addr += sizeof(m_rampSec[0]);
+
+        if (!skip)
+            EEPROM.get( addr, m_holdRangeMs[i] );
+        addr += sizeof(m_holdRangeMs[0]);
+
+        if (!skip)
+            EEPROM.get( addr, m_rampRangeMs[i] );
+        addr += sizeof(m_rampRangeMs[0]);
+    }
+
+    void saveSettings( unsigned char i, unsigned& addr ) {
+
+        EEPROM.put( addr, m_mode[i] );
+        addr += sizeof(m_mode[0]);
+
+        EEPROM.put( addr, m_topSpeed[i] );
+        addr += sizeof(m_topSpeed[0]);
+
+        EEPROM.put( addr, m_slowSpeed[i] );
+        addr += sizeof(m_slowSpeed[0]);
+
+        EEPROM.put( addr, m_holdSec[i] );
+        addr += sizeof(m_holdSec[0]);
+
+        EEPROM.put( addr, m_rampSec[i] );
+        addr += sizeof(m_rampSec[0]);
+
+        EEPROM.put( addr, m_holdRangeMs[i] );
+        addr += sizeof(m_holdRangeMs[0]);
+
+        EEPROM.put( addr, m_rampRangeMs[i] );
+        addr += sizeof(m_rampRangeMs[0]);
     }
 
     void restoreSettings() {
         unsigned addr = m_confAddr;
+        for ( int i=0; i < NUM_SETS; i++ ) {
+            restoreSettings(i,addr);
+        }
 
-        EEPROM.get( addr, m_mode );
-        addr += sizeof(m_mode);
-
-        EEPROM.get( addr, m_topSpeed );
-        addr += sizeof(m_topSpeed);
-
-        EEPROM.get( addr, m_slowSpeed );
-        addr += sizeof(m_slowSpeed);
-
-        EEPROM.get( addr, m_holdSec );
-        addr += sizeof(m_holdSec);
-
-        EEPROM.get( addr, m_rampSec );
-        addr += sizeof(m_rampSec);
-
-        EEPROM.get( addr, m_holdRangeMs );
-        addr += sizeof(m_holdRangeMs);
-
-        EEPROM.get( addr, m_rampRangeMs );
-        addr += sizeof(m_rampRangeMs);
+        EEPROM.get( addr, m_curSet );
+        addr += sizeof(m_curSet);
+        if (m_curSet == 0xFF)
+            m_curSet = 0;
     }
-
+        
     void saveSettings() {
         unsigned addr = m_confAddr;
+        for ( int i=0; i < NUM_SETS; i++ ) {
+            saveSettings(i,addr);
+        }
 
-        EEPROM.put( addr, m_mode );
-        addr += sizeof(m_mode);
-
-        EEPROM.put( addr, m_topSpeed );
-        addr += sizeof(m_topSpeed);
-
-        EEPROM.put( addr, m_slowSpeed );
-        addr += sizeof(m_slowSpeed);
-
-        EEPROM.put( addr, m_holdSec );
-        addr += sizeof(m_holdSec);
-
-        EEPROM.put( addr, m_rampSec );
-        addr += sizeof(m_rampSec);
-
-        EEPROM.put( addr, m_holdRangeMs );
-        addr += sizeof(m_holdRangeMs);
-
-        EEPROM.put( addr, m_rampRangeMs );
-        addr += sizeof(m_rampRangeMs);
+        EEPROM.put( addr, m_curSet );
+        addr += sizeof(m_curSet);
     }
         
   protected:
@@ -455,13 +524,14 @@ class ControllablePump
     unsigned char m_minPct;
     unsigned      m_confAddr;
     unsigned char m_curSpeed;
-    unsigned char m_topSpeed;
-    unsigned char m_slowSpeed;
-    Mode          m_mode;
-    unsigned char m_rampSec;
-    unsigned char m_holdSec;
-    unsigned long m_rampRangeMs;
-    unsigned long m_holdRangeMs;
+    unsigned char m_curSet;
+    unsigned char m_topSpeed[NUM_SETS];
+    unsigned char m_slowSpeed[NUM_SETS];
+    Mode          m_mode[NUM_SETS];
+    unsigned char m_rampSec[NUM_SETS];
+    unsigned char m_holdSec[NUM_SETS];
+    unsigned long m_rampRangeMs[NUM_SETS];
+    unsigned long m_holdRangeMs[NUM_SETS];
     long           m_rampOffset;
     long           m_holdOffset;
     unsigned long m_lastChangeTime;
@@ -471,7 +541,6 @@ class ControllablePump
     ShutdownKind  m_tempShutoffMode;
     char          m_upDown;
     unsigned char m_retries;
-    static int    m_rand;
     RF24IPInterface& m_rf24;
 
     class SwitchSettable : public RemoteSettable<char> 
@@ -506,6 +575,6 @@ class ControllablePump
     SwitchSettable  m_switch;
 };
 
-int ControllablePump::m_rand __attribute__((weak)) = 12345;
+int ControllablePumpBase::m_rand __attribute__((weak)) = 12345;
 
 #endif
