@@ -33,7 +33,8 @@
 #define PUMP_EE_SIZE        (NUM_PUMPS*Pump::ee_size())
 
 
-#define DEFAULT_MS_PER_ML 5000
+#define DEFAULT_MS_PER_ML (70UL*1000UL)
+#define MAX_MS_PER_ML (150UL*1000UL)
 
 // Network.
 RF24IPInterface rf24( 9, RF24_CE, RF24_CSN );
@@ -129,7 +130,7 @@ class Pump {
         addr += sizeof(m_ms_per_ml);
 
         // Never allow m_ms_per_ml to be garbage.
-        if ((m_ms_per_ml == 0) || (m_ms_per_ml > 50000))
+        if ((m_ms_per_ml == 0) || (m_ms_per_ml > MAX_MS_PER_ML))
             m_ms_per_ml = DEFAULT_MS_PER_ML;
     }
 
@@ -205,7 +206,7 @@ void setup() {
     unsigned char sig = 0;
     EEPROM.get( SIG_EE_ADDR, sig );
     bool useSettings = (sig == EE_SIG);
-    EEPROM.put( SIG_EE_ADDR, EE_SIG );
+    EEPROM.put( SIG_EE_ADDR, (char)EE_SIG );
 
     setupTimers();
 
