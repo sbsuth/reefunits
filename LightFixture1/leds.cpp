@@ -24,6 +24,11 @@ void Leds::init() {
         }
     }
     setTime( 1530514800 ); // A midnight
+    if (LIGHT_POWER)  {
+        pinMode( LIGHT_POWER, OUTPUT );
+        digitalWrite( LIGHT_POWER, 0 );
+    }
+
     dimAll(0);
 
 }
@@ -63,7 +68,9 @@ unsigned Leds::restoreSettings()
         for ( unsigned char ichan=0; ichan < NUM_LED_NUMS; ichan++ ) {
             unsigned char pct = 0;
             EEPROM.get( addr++, pct );
+#if !HYBRID
             m_ledPcts[spec][ichan] = pct;
+#endif
         }
     }
     EEPROM.get( addr++, m_curSpectrum );
@@ -122,6 +129,7 @@ unsigned long Leds::getTimeOfDaySec( bool adjust )
 void Leds::dimAll( unsigned char pct ) {
     if (pct > 100)
         pct = 100;
+    bool allOff = true;
     unsigned int val = ((unsigned long)pct * 255UL)/100UL;
     for ( char led=FIRST_LED; led <= LAST_LED; led++ ) {
         if (SKIP_LED(led)) 
@@ -138,6 +146,15 @@ void Leds::dimAll( unsigned char pct ) {
 
         m_curVals[i] = ledVal;
         analogWrite( led, ledVal );
+        if (ledVal > 0)
+            allOff = false;
+    }
+    // If there's a switch, update it.
+    if (LIGHT_POWER) {
+        if (m_curLightPower == allOff) {
+            m_curLightPower = !allOff;
+            digitalWrite( LIGHT_POWER, m_curLightPower );
+        }
     }
 }
 

@@ -1,6 +1,20 @@
 #ifndef LEDS_H
 #define LEDS_H
 
+
+#if HYBRID
+
+// T5
+#define FIRST_LED       5
+#define LAST_LED        6
+#define NUM_LED_NUMS    ((LAST_LED - FIRST_LED) + 1)
+#define NUM_LEDS        2
+#define SKIP_LED(id)    0
+#define SKIP_LED_NUM(i) 0
+#define LIGHT_POWER      42
+
+#else
+
 // LEDs
 #define RED_LED         2
 #define AMBER_LED       3
@@ -11,14 +25,16 @@
 #define WHITE_LED       8
 #define CYAN_LED        9 
 #define BLUE_STRIP     13
-// Cyan sometimes labeled turquois
 
+// Cyan sometimes labeled turquois
 #define FIRST_LED       2
 #define LAST_LED       13
 #define NUM_LED_NUMS    ((LAST_LED - FIRST_LED) + 1)
 #define NUM_LEDS        8
 #define SKIP_LED(id)    ((id == SKIPPED_LED) || (id == 10) || (id == 11) || (id == 12))
 #define SKIP_LED_NUM(i)    SKIP_LED(i + FIRST_LED)
+#define LIGHT_POWER      0
+#endif
 
 
 #define NUM_SPECTRUMS   2
@@ -67,6 +83,7 @@ class Leds
         , m_normFactor(1.0)
         , m_highPct(50)
         , m_lowPct(20)
+        , m_curLightPower(false)
         , m_curSpectrum(0)
         , m_mode(Timed)
         , m_timeIsSet(false)
@@ -158,6 +175,7 @@ class Leds
   protected:
     unsigned        m_confAddr;
     unsigned char   m_curVals[NUM_LED_NUMS];
+    bool            m_curLightPower;
     unsigned char   m_ledPcts[NUM_SPECTRUMS][NUM_LED_NUMS];
     unsigned char   m_curSpectrum;
     unsigned char   m_highPct;

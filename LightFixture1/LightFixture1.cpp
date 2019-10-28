@@ -2,10 +2,10 @@
  */
 
 // Debug prints.
-//#define DEBUG_STARTUP 1
-//#define DEBUG_CHANGES 1
-//#define DEBUG_CMD 1
-//#define DEBUG_CONNECT 1
+#define DEBUG_STARTUP 0
+#define DEBUG_CHANGES 0
+#define DEBUG_CMD 0
+#define DEBUG_CONNECT 0
 
 
 // Cause period re-init of RF24 subsystem.
@@ -23,18 +23,27 @@
 #include "Command.h"
 #include "RemoteTime.h"
 
-//#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega168__)
-// Uno
-//#define UP_LED_OUT   	 5 
-//#define UP_BUTTON_IN 	 9
-//#define DOWN_LED_OUT 	 4 
-//#define DOWN_BUTTON_IN   2
-//#define SPEED_PWM        6
-//#define CURRENT_LED_OUT  3
-//#define RF24_CE          7
-//#define RF24_CSN         8
-//#elif defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
-// Mega
+
+#define LED_EE_ADDR 16
+
+
+#if HYBRID
+// New board
+#define NODE_ADDR 10
+#define UP_LED_OUT   	 35 
+#define UP_BUTTON_IN 	 27
+#define DOWN_LED_OUT 	 31 
+#define DOWN_BUTTON_IN   4
+#define SPEED_PWM        33 
+#define CURRENT_LED_OUT  29
+#define MODE_BUTTON_IN   49
+#define SPECTRUM_BUTTON_IN 47
+#define RF24_CE          25
+#define RF24_CSN         23
+#define CURRENT_IN      A0
+#else
+// Original board
+#define NODE_ADDR 4
 #define UP_LED_OUT   	 27 
 #define UP_BUTTON_IN 	 35
 #define DOWN_LED_OUT 	 31 
@@ -45,18 +54,11 @@
 #define SPECTRUM_BUTTON_IN 47
 #define RF24_CE          25
 #define RF24_CSN         23
-
-//#else
-//#error "Not an expected Arduino!"
-//#endif
 #define CURRENT_IN      A0
-
-#define LED_EE_ADDR 16
-
-
+#endif
 
 // Network objects
-RF24IPInterface rf24( 4, RF24_CE, RF24_CSN, RF24_PA_LOW );
+RF24IPInterface rf24( NODE_ADDR, RF24_CE, RF24_CSN, RF24_PA_LOW );
 DEFINE_RF24IPInterface_STATICS(rf24);
 
 // Leds

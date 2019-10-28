@@ -5,9 +5,11 @@ MCU :=atmega2560
 ARDUINO_VERSION := 10607
 #MCU := atmega328p
 #ARDUINO_VERSION := 10607
-PORT := \\.\COM3
+PORT := \\.\COM6
 
 include ../utils/Makefile.arduino
+
+CXXDEFS += -DHYBRID=1
 
 serial:
 	C:/Program\ Files\ \(x86\)/PuTTY/putty.exe -load Arduino &
