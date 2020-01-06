@@ -24,6 +24,7 @@ X(  CmdCalTemp,         "calt", false,   CmdArgFloat,CmdArgNone, CmdArgNone )
 X(  CmdRenewRadio,      "rr",   false,  CmdArgNone, CmdArgNone, CmdArgNone )
 X(  CmdCalConsts,       "cc",   false,  CmdArgNone, CmdArgNone, CmdArgNone )
 X(  CmdProbeCmd,        "pc",   true,   CmdArgStr,  CmdArgNone, CmdArgNone )
+X(  CmdTC,              "tc",   true,   CmdArgInt,  CmdArgFloat, CmdArgNone )
 X(  CmdNone,            "nop",  false,  CmdArgNone, CmdArgNone, CmdArgNone )
 
 #endif

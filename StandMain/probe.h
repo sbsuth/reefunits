@@ -7,7 +7,7 @@ class AtlasProbe
 {
   public:
     AtlasProbe( HardwareSerial& serial, TempController& tc )
-        : m_serial(serial), m_tc(tc), m_lastTC(0)
+        : m_serial(serial), m_tc(tc), m_lastTC(0), m_tcOn(true)
     {
     }
 
@@ -46,11 +46,8 @@ class AtlasProbe
 
     bool update() {
         // Update temp compensation once per minute.
-        if ((millis() - m_lastTC) > (60UL*1000UL)) {
-            String cmd("T,");
-            cmd.concat( TempController::f2c(m_tc.curTemp()));
-            String rslt;
-            sendCmd(cmd,rslt);
+        if (m_tcOn && ((millis() - m_lastTC) > (60UL*1000UL))) {
+            setTCVal( m_tc.curTemp() );
             m_lastTC = millis();
         }
 
@@ -83,11 +80,21 @@ class AtlasProbe
 
         return ok;
     }
+    void setTC( bool onOff ) {
+        m_tcOn = onOff;
+    }
+    void setTCVal( float val ) {
+        String cmd("T,");
+        cmd.concat( TempController::f2c(val));
+        String rslt;
+        sendCmd(cmd,rslt);
+    }
   protected:
     HardwareSerial& m_serial;
     String  m_buf;
     TempController& m_tc;
     unsigned long m_lastTC;
+    bool m_tcOn;
 };
 
 class pHProbe : public AtlasProbe
@@ -153,6 +160,13 @@ class ConductivityProbe : public AtlasProbe
 
     void setup() {
         AtlasProbe::setup();
+
+        // I haven't been able to get this thing calibrated so that it agrees
+        // with other devices.  Experiments show that if TC is set to 72F,
+        // values match the Hanna.  So, turn off auto updates, and set the TC
+        // at 72.
+        setTC( 0 );
+        setTCVal( 72.0 );
     }
 
     bool update() {

@@ -428,6 +428,30 @@ void processCommand()
                 }
                 break;
             }
+            case CmdTC: {
+                // First is on/off, second is value to set it to if off
+                int onOff;
+                float TC;
+                AtlasProbe* probe = 0;
+                if (cmd->arg(0)->getInt(onOff)) {
+                    switch (cmd->ID()) {
+                        case 0: probe = &EC_probe; break;
+                        case 1: probe = &pH_probe; break;
+                    }
+                    if (probe) {
+                        probe->setTC( onOff );
+                        float val = 0.0;
+                        if (cmd->arg(1)->getFloat(val) && (val > 0.0)) {
+                            probe->setTCVal(val);
+                        }
+                        cmd->ack( "OK" );
+                        respDone = true;
+                    }
+                }
+                break;
+
+                break;
+            }
             default:
                 #if DEBUG_CMD
                 Serial.println(F("Unrecognized cmd\n"));
